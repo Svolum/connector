@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Telegram Квиз</title>
+  <style>
+    body { font-family: Arial, sans-serif; }
+    #messages { border: 1px solid #ccc; padding: 10px; height: 400px; overflow-y: scroll; }
+    .message { margin-bottom: 10px; padding: 5px; background: #f0f0f0; }
+    #quiz-form { margin-bottom: 20px; }
+    #question { width: 100%; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <h1>Квиз через Telegram</h1>
+  <div id="quiz-form">
+    <input type="text" id="chat_id" placeholder="Введите Telegram chat_id">
+    <textarea id="question" placeholder="Введите вопрос"></textarea>
+    <button onclick="sendQuestion()">Отправить вопрос</button>
+  </div>
+  <div id="messages"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const messagesDiv = document.getElementById('messages');
+
+    socket.on('newMessage', (message) => {
+      const messageElement = document.createElement('div');
+      messageElement.classList.add('message');
+      messageElement.textContent = message;
+      messagesDiv.appendChild(messageElement);
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    });
+
+    function sendQuestion() {
+      const chat_id = document.getElementById('chat_id').value;
+      const question = document.getElementById('question').value;
+      if (!chat_id || !question) {
+        alert('Пожалуйста, введите chat_id и вопрос');
+        return;
+      }
+      fetch('/send_question', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id, question })
+      })
+        .then(response => response.json())
+        .then(data => {
+          const messageElement = document.createElement('div');
+          messageElement.classList.add('message');
+          messageElement.textContent = data.message || 'Ошибка: ' + data.error;
+          messagesDiv.appendChild(messageElement);
+          messagesDiv.scrollTop = messagesDiv.scrollHeight;
+          if (data.message) {
+            document.getElementById('question').value = ''; // Очищаем поле вопроса
+          }
+        })
+        .catch(error => {
+          console.error('Ошибка при отправке вопроса:', error);
+          alert('Ошибка при отправке вопроса');
+        });
+    }
+  </script>
+</body>
+</html>
