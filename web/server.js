@@ -10,10 +10,12 @@ app.use(express.json());
 app.use(express.static(__dirname));
 
 // Эндпоинт для получения сообщений от бота
-app.post('/message', (req, res) => {
-  const message = req.body.message;
-  if (message) {
-    io.emit('newMessage', message);
+app.post('/user_message', (req, res) => {
+  const chat_id = req.body.chat_id;
+  const sender_nick = req.body.sender_nick;
+  const text = req.body.text;
+  if (chat_id && sender_nick && text) {
+    io.emit('newMessage', chat_id, sender_nick, text);
     res.status(200).send('Сообщение получено');
   } else {
     res.status(400).send('Сообщение не предоставлено');
@@ -21,13 +23,14 @@ app.post('/message', (req, res) => {
 });
 
 // Эндпоинт для отправки вопроса в Telegram
-app.post('/send_question', (req, res) => {
-  const { chat_id, question } = req.body;
-  if (chat_id && question) {
-    fetch('http://telegram-bot:8080/send_question', {
+app.post('/message', (req, res) => {
+  const chat_id = req.body.chat_id;
+  const sending_text  = req.body.sending_text;
+  if (chat_id && sending_text) {
+    fetch('http://telegram-bot:8080/message', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id, question })
+      body: JSON.stringify({ chat_id, sending_text })
     })
       .then(response => response.json())
       .then(data => res.status(200).json(data))

@@ -9,15 +9,15 @@
     #messages { border: 1px solid #ccc; padding: 10px; height: 400px; overflow-y: scroll; }
     .message { margin-bottom: 10px; padding: 5px; background: #f0f0f0; }
     #quiz-form { margin-bottom: 20px; }
-    #question { width: 100%; margin-bottom: 10px; }
+    #sending_text { width: 100%; margin-bottom: 10px; }
   </style>
 </head>
 <body>
   <h1>Квиз Telegram</h1>
   <div id="quiz-form">
     <input type="text" id="chat_id" placeholder="Введите Telegram chat_id">
-    <textarea id="question" placeholder="Введите вопрос"></textarea>
-    <button onclick="sendQuestion()">Отправить вопрос</button>
+    <textarea id="sending_text" placeholder="Введите вопрос"></textarea>
+    <button onclick="sendText()">Отправить вопрос</button>
   </div>
   <div id="messages"></div>
 
@@ -26,7 +26,8 @@
     const socket = io();
     const messagesDiv = document.getElementById('messages');
 
-    socket.on('newMessage', (message) => {
+    socket.on('newMessage', (chat_id, sender_nick, text) => {
+      const message = `${chat_id}|${sender_nick}: ${text}`;
       const messageElement = document.createElement('div');
       messageElement.classList.add('message');
       messageElement.textContent = message;
@@ -34,17 +35,17 @@
       messagesDiv.scrollTop = messagesDiv.scrollHeight;
     });
 
-    function sendQuestion() {
+    function sendText() {
       const chat_id = document.getElementById('chat_id').value;
-      const question = document.getElementById('question').value;
-      if (!chat_id || !question) {
-        alert('Пожалуйста, введите chat_id и вопрос');
+      const sending_text = document.getElementById('sending_text').value;
+      if (!chat_id || !sending_text) {
+        alert('Пожалуйста, введите chat_id и sending_text');
         return;
       }
-      fetch('/send_question', {
+      fetch('/message', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id, question })
+        body: JSON.stringify({ chat_id, sending_text })
       })
         .then(response => response.json())
         .then(data => {
@@ -54,7 +55,7 @@
           messagesDiv.appendChild(messageElement);
           messagesDiv.scrollTop = messagesDiv.scrollHeight;
           if (data.message) {
-            document.getElementById('question').value = ''; // Очищаем поле вопроса
+            document.getElementById('sending_text').value = ''; // Очищаем поле вопроса
           }
         })
         .catch(error => {

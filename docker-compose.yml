@@ -2,19 +2,19 @@ services:
   telegram-bot:
     build:
       context: .
-      dockerfile: Dockerfile.bot
+      dockerfile: ./bot/Dockerfile.bot
     volumes:
-      - ./bot.py:/app/bot.py
+      - ./bot/bot.py:/app/bot.py
     depends_on:
       - web-server
 
   web-server:
     build:
       context: .
-      dockerfile: Dockerfile.web
+      dockerfile: ./web/Dockerfile.web
     ports:
       - "3000:3000"
     volumes:
-      - ./index.html:/app/index.html
-      - ./package.json:/app/package.json
-      - ./server.js:/app/server.js
+      - ./web/index.html:/app/index.html
+      - ./web/package.json:/app/package.json
+      - ./web/server.js:/app/server.js
