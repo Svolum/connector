@@ -25,12 +25,12 @@ app.post('/user_message', (req, res) => {
 // Эндпоинт для отправки вопроса в Telegram
 app.post('/message', (req, res) => {
   const chat_id = req.body.chat_id;
-  const sending_text  = req.body.sending_text;
-  if (chat_id && sending_text) {
+  const text  = req.body.sending_text;
+  if (chat_id && text) {
     fetch('http://telegram-bot:8080/message', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id, sending_text })
+      body: JSON.stringify({ chat_id, text })
     })
       .then(response => response.json())
       .then(data => res.status(200).json(data))

@@ -16,9 +16,9 @@ app = FastAPI()
 @app.post("/message")
 async def send_text_to_user(data: dict):
     chat_id = data.get("chat_id")
-    sending_text = data.get("sending_text")
+    sending_text = data.get("text")
     if not chat_id or not sending_text:
-        return {"error": "chat_id и sending_text обязательны"}
+        return {"error": "chat_id и text обязательны"}
     try:
         await telegram_app.bot.send_message(chat_id=chat_id, text=sending_text)
         return {'message': f"ВЫ: {sending_text}"}
