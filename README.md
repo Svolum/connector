@@ -1,1 +1,1 @@
-123
+Connector + заглушка API
