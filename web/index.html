@@ -8,61 +8,31 @@
     body { font-family: Arial, sans-serif; }
     #messages { border: 1px solid #ccc; padding: 10px; height: 400px; overflow-y: scroll; }
     .message { margin-bottom: 10px; padding: 5px; background: #f0f0f0; }
-    #quiz-form { margin-bottom: 20px; }
+    #send-text-form { margin-bottom: 20px; }
     #sending_text { width: 100%; margin-bottom: 10px; }
   </style>
 </head>
 <body>
   <h1>Квиз Telegram</h1>
-  <div id="quiz-form">
+  <h6>чат id можно узнать свой чат id отправив любое сообщение боту, цифры в появившемся сообщении и есть чат id</h6>
+<!-- Окошко отправки обычного текстового сообщения -->
+  <div id="send-text-form">
     <input type="text" id="chat_id" placeholder="Введите Telegram chat_id">
     <textarea id="sending_text" placeholder="Введите вопрос"></textarea>
     <button onclick="sendText()">Отправить вопрос</button>
   </div>
+<!-- Окошко отправки inline keyboard, это клавиатура внутри опр сообщения-->
+  <div id="send-keyboard-form">
+    <input id="keyboard_title" type="text" placeholder="Введите title для клавиатуры">
+    <input id="keyboard_chat_id" type="text" placeholder="Введите Telegram chat_id">
+    <button onclick="add_button()">добавить кнопку</button>
+    <ul id="button_vals"></ul>
+    <button onclick="sendKeyboard()">Отправить клавиатуру</button>
+  </div>
+<!-- Окошко отправки обчной клавиатуры, виден без сообщений, просто так -->
   <div id="messages"></div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script>
-    const socket = io();
-    const messagesDiv = document.getElementById('messages');
-
-    socket.on('newMessage', (chat_id, sender_nick, text) => {
-      const message = `${chat_id}|${sender_nick}: ${text}`;
-      const messageElement = document.createElement('div');
-      messageElement.classList.add('message');
-      messageElement.textContent = message;
-      messagesDiv.appendChild(messageElement);
-      messagesDiv.scrollTop = messagesDiv.scrollHeight;
-    });
-
-    function sendText() {
-      const chat_id = document.getElementById('chat_id').value;
-      const sending_text = document.getElementById('sending_text').value;
-      if (!chat_id || !sending_text) {
-        alert('Пожалуйста, введите chat_id и sending_text');
-        return;
-      }
-      fetch('/message', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id, sending_text })
-      })
-        .then(response => response.json())
-        .then(data => {
-          const messageElement = document.createElement('div');
-          messageElement.classList.add('message');
-          messageElement.textContent = data.message || 'Ошибка: ' + data.error;
-          messagesDiv.appendChild(messageElement);
-          messagesDiv.scrollTop = messagesDiv.scrollHeight;
-          if (data.message) {
-            document.getElementById('sending_text').value = ''; // Очищаем поле вопроса
-          }
-        })
-        .catch(error => {
-          console.error('Ошибка при отправке вопроса:', error);
-          alert('Ошибка при отправке вопроса');
-        });
-    }
-  </script>
+  <script src="scripts.js"></script>
 </body>
 </html>

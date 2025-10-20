@@ -18,3 +18,4 @@ services:
       - ./web/index.html:/app/index.html
       - ./web/package.json:/app/package.json
       - ./web/server.js:/app/server.js
+      - ./web/scripts.js:/app/scripts.js
