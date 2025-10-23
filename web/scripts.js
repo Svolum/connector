@@ -53,7 +53,7 @@ function add_button() {
 }
     
 function sendKeyboard() {
-    const chat_id = document.getElementById('keyboard_chat_id').value;
+    const chat_id = document.getElementById('chat_id').value;
     const title = document.getElementById('keyboard_title').value;
     const li_elts = document.getElementById("button_vals").querySelectorAll("li");
 
