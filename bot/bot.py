@@ -72,6 +72,8 @@ async def button_click(update: Update, context):
             print(f"Ошибка при отправке сообщения на веб-сервер: {response.text}")
     except Exception as e:
         print(f"Не удалось отправить реакцию на inline клавиатуру: {e}")
+    
+    await query.message.delete()
 
 async def start(update: Update, context):
     await update.message.reply_text("Привет! Отправляй сообщения, они появятся в веб-интерфейсе. Ответы придут от веб-интерфейса.")
