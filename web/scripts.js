@@ -70,7 +70,7 @@ function sendKeyboard() {
         return;
     }
 
-    fetch('/keyboard/create_inline', {
+    fetch('/keyboard/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_id, title, buttons })

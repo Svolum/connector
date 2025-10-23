@@ -50,7 +50,7 @@ app.post('/message', (req, res) => {
     res.status(400).send('Не указаны chat_id или text');
   }
 });
-app.post('/keyboard/create_inline', (req, res) => {
+app.post('/keyboard/create', (req, res) => {
   const chat_id = req.body.chat_id;
   const title = req.body.title;
   const buttons = req.body.buttons;
@@ -59,7 +59,7 @@ app.post('/keyboard/create_inline', (req, res) => {
     return res.status(400).json({ error: 'Не указаны chat_id, title или недостаточно кнопок' });
   }
 
-  fetch('http://telegram-bot:8080/keyboard/create_inline', {
+  fetch('http://telegram-bot:8080/keyboard/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id, title, buttons })
