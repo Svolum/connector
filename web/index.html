@@ -1,38 +1,90 @@
 <!DOCTYPE html>
-<html lang="ru">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Telegram Квиз</title>
-  <style>
-    body { font-family: Arial, sans-serif; }
-    #messages { border: 1px solid #ccc; padding: 10px; height: 400px; overflow-y: scroll; }
-    .message { margin-bottom: 10px; padding: 5px; background: #f0f0f0; }
-    #send-text-form { margin-bottom: 20px; }
-    #sending_text { width: 100%; margin-bottom: 10px; }
-  </style>
-</head>
-<body>
-  <h1>Квиз Telegram</h1>
-  <h6>чат id можно узнать свой чат id отправив любое сообщение боту, цифры в появившемся сообщении и есть чат id</h6>
-<!-- Окошко отправки обычного текстового сообщения -->
-  <div id="send-text-form">
-    <input type="text" id="chat_id" placeholder="Введите Telegram chat_id">
-    <textarea id="sending_text" placeholder="Введите вопрос"></textarea>
-    <button onclick="sendText()">Отправить вопрос</button>
-  </div>
-<!-- Окошко отправки inline keyboard, это клавиатура внутри опр сообщения-->
-  <div id="send-keyboard-form">
-    <input id="keyboard_title" type="text" placeholder="Введите title для клавиатуры">
-    <input id="keyboard_chat_id" type="text" placeholder="Введите Telegram chat_id">
-    <button onclick="add_button()">добавить кнопку</button>
-    <ul id="button_vals"></ul>
-    <button onclick="sendKeyboard()">Отправить клавиатуру</button>
-  </div>
-<!-- Окошко отправки обчной клавиатуры, виден без сообщений, просто так -->
-  <div id="messages"></div>
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script src="scripts.js"></script>
+<html lang="ru">
+
+<head>
+
+  <meta charset="UTF-8">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Telegram Квиз</title>
+
+  <style>
+
+    body { font-family: Arial, sans-serif; }
+
+    #messages { border: 1px solid #ccc; padding: 10px; height: 400px; overflow-y: scroll; }
+
+    .message { margin-bottom: 10px; padding: 5px; background: #f0f0f0; }
+
+    #send-text-form, #send-image-form, #send-keyboard-form { margin-bottom: 20px; }
+
+    input, button { margin-bottom: 10px; }
+
+  </style>
+
+</head>
+
+<body>
+
+  <h1>Квиз Telegram</h1>
+
+  <h6>Чат ID можно узнать, отправив любое сообщение боту, цифры в появившемся сообщении — это chat_id</h6>
+
+  
+
+<!-- Форма отправки текста -->
+<div id="send-text-form">
+    <input type="text" id="chat_id" placeholder="Введите Telegram chat_id">
+    <textarea id="sending_text" placeholder="Введите текст сообщения"></textarea>
+    <button onclick="sendText()">Отправить текст</button>
+</div>
+
+  
+
+  <!-- Форма отправки изображения -->
+
+  <div id="send-image-form">
+
+    <input type="text" id="image_chat_id" placeholder="Введите Telegram chat_id">
+
+    <input type="file" id="image_file" accept="image/jpeg,image/png">
+
+    <button onclick="sendImage()">Отправить изображение</button>
+
+  </div>
+
+  
+
+  <!-- Форма отправки inline клавиатуры -->
+
+  <div id="send-keyboard-form">
+
+    <input id="keyboard_title" type="text" placeholder="Введите title для клавиатуры">
+
+    <input id="keyboard_chat_id" type="text" placeholder="Введите Telegram chat_id">
+
+    <button onclick="add_button()">Добавить кнопку</button>
+
+    <ul id="button_vals"></ul>
+
+    <button onclick="sendKeyboard()">Отправить клавиатуру</button>
+
+  </div>
+
+  
+
+  <!-- Окно сообщений -->
+
+  <div id="messages"></div>
+
+  
+
+  <script src="/socket.io/socket.io.js"></script>
+
+  <script src="scripts.js"></script>
+
 </body>
+
 </html>
