@@ -5,6 +5,7 @@ services:
       dockerfile: ./bot/Dockerfile.bot
     volumes:
       - ./bot/bot.py:/app/bot.py
+      - ./bot/images:/app/images
     depends_on:
       - web-server
 
@@ -19,3 +20,4 @@ services:
       - ./web/package.json:/app/package.json
       - ./web/server.js:/app/server.js
       - ./web/scripts.js:/app/scripts.js
+      - ./web/images:/app/images  # Добавьте эту строку
