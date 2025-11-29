@@ -5,7 +5,11 @@ services:
       dockerfile: ./bot/Dockerfile.bot
     volumes:
       - ./bot/bot.py:/app/bot.py
+      - ./bot/config.ini:/app/config.ini
       - ./bot/images:/app/images
+    environment:
+      - WEB_INTERFACE_HOST_URL=http://web-server:3000
+      - API_TOKEN=1873920038:AAGbA5l5Uv0qqLRxYrcs1iShTaZ0MBH7eM4
     depends_on:
       - web-server
 

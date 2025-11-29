@@ -113,7 +113,7 @@ async function sendKeyboard() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ chat_id, title, buttons })
         }).then(response => response.json()).then(data => {
-            addNewMessage ('оператор/клавиатура', 'Вы', buttons)
+            addNewMessage ('оператор/клавиатура', 'Вы', title + ':' + buttons)
         });
         const result = await response.json();
         

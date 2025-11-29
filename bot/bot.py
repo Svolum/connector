@@ -1,16 +1,20 @@
 #1344678447
-import os
-import requests
+import os # используется для того, чтобы загружать файлы(картинки) от пользователя
+import requests # через него можно отправлять свои GET и POST запросы
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
-from fastapi import FastAPI
-import uvicorn
+from fastapi import FastAPI # ФРЕЙМВОРК. используется для того чтобы программа начала слушать на каком-то порту
+import uvicorn # веб-сервер, который запускает ассинхронные веб-приложения // используется для запуска FastApi
 import threading
-import aiofiles
 from pathlib import Path
 
-TELEGRAM_TOKEN = '1873920038:AAGbA5l5Uv0qqLRxYrcs1iShTaZ0MBH7eM4'
-WEB_SERVER_URL = 'http://web-server:3000'
+
+
+
+TELEGRAM_TOKEN = os.getenv('API_TOKEN')
+WEB_SERVER_URL = os.getenv('WEB_INTERFACE_HOST_URL')
+
+
 telegram_app = None
 
 app = FastAPI()
@@ -18,6 +22,7 @@ app = FastAPI()
 # Создаем директорию для временного хранения изображений
 IMAGES_DIR = Path("images")
 IMAGES_DIR.mkdir(exist_ok=True)
+
 
 # обработка текстовых сообщений от web-интерфейса
 @app.post("/message")
@@ -74,7 +79,9 @@ async def button_click(update: Update, context):
             print(f"Ошибка при отправке сообщения на веб-сервер: {response.text}")
     except Exception as e:
         print(f"Не удалось отправить реакцию на inline клавиатуру: {e}")
-    await query.message.delete()
+    #await query.message.delete()
+    #await telegram_app.bot.send_message(chat_id=chat_id, text=f"{query.message.text} : {button}")
+    await telegram_app.bot.edit_message_text(chat_id=chat_id, message_id=query.message.message_id, text=f"{query.message.text} : {button}")
 
 async def start(update: Update, context):
     await update.message.reply_text("Привет! Отправляй сообщения или изображения, они появятся в веб-интерфейсе. Ответы придут от веб-интерфейса.")
@@ -111,9 +118,9 @@ async def handle_photo_from_user(update: Update, context):
         chat_id = update.message.chat_id
 
         # Проверяем размер файла (не больше 10 МБ)
-        if photo.file_size > 10 * 1024 * 1024:
-            print(f"Изображение слишком большое: {photo.file_size} байт")
-            return
+        # if photo.file_size > 10 * 1024 * 1024:
+        #     print(f"Изображение слишком большое: {photo.file_size} байт")
+        #     return
 
         # Получаем файл из Telegram
         file = await photo.get_file()
@@ -144,10 +151,9 @@ async def handle_photo_from_user(update: Update, context):
         except Exception as e:
             print(f"Не удалось отправить изображение: {e}")
         finally:
-            1 == 1
             # Удаляем временный файл
-            #if file_path.exists():
-            #    file_path.unlink()
+            if file_path.exists():
+               file_path.unlink()
 
 def run_fastapi():
     uvicorn.run(app, host="0.0.0.0", port=8080)
@@ -155,9 +161,13 @@ def run_fastapi():
 def main():
     global telegram_app
     telegram_app = Application.builder().token(TELEGRAM_TOKEN).build()
+    # добавление обработки команды "start"
     telegram_app.add_handler(CommandHandler("start", start))
+    # добавление обработки текстовых сообщений
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message_from_user))
+    # добавление обработки картинок
     telegram_app.add_handler(MessageHandler(filters.PHOTO, handle_photo_from_user))
+    # добавление обработки нажатий пользователя на клавиатуру
     telegram_app.add_handler(CallbackQueryHandler(button_click))
     threading.Thread(target=run_fastapi, daemon=True).start()
     telegram_app.run_polling(allowed_updates=Update.ALL_TYPES)
