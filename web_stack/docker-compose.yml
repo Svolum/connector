@@ -16,7 +16,7 @@ services:
       - ./web/scripts.js:/app/scripts.js
       - ./web/images:/app/images
     environment:
-      - TELEGRAM_BOT_URL=https://xmilitary.online:5580
+      - TELEGRAM_BOT_URL=https://xmilitary.online:55443
       - NODE_ENV=production
     networks:
       - web-network
@@ -32,6 +32,7 @@ services:
       - "88443:443"
     volumes:
       - ./web/images:/app/images:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro  # 👈 Проброс сертификатов
     depends_on:
       - web-server
     networks:

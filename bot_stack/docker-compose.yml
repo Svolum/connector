@@ -13,7 +13,7 @@ services:
       - ./bot/bot.py:/app/bot.py
       - ./bot/images:/app/images
     environment:
-      - WEB_SERVER_URL=https://xmilitary.online:8880
+      - WEB_SERVER_URL=https://xmilitary.online:88443
       - API_TOKEN=1873920038:AAGbA5l5Uv0qqLRxYrcs1iShTaZ0MBH7eM4
       - BOT_HOST=0.0.0.0
       - BOT_PORT=8080
@@ -29,6 +29,8 @@ services:
     ports:
       - "5580:80"
       - "55443:443"
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro  # 👈 Проброс сертификатов
     depends_on:
       - telegram-bot
     networks:
