@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  web-server:
+    build:
+      context: .
+      dockerfile: ./web/Dockerfile.web
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./web/index.html:/app/index.html
+      - ./web/package.json:/app/package.json
+      - ./web/server.js:/app/server.js
+      - ./web/scripts.js:/app/scripts.js
+      - ./web/images:/app/images
+    environment:
+      - TELEGRAM_BOT_URL=http://host.docker.internal:8080  

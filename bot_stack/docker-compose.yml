@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: ./bot/Dockerfile.bot
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./bot/bot.py:/app/bot.py
+      - ./bot/images:/app/images
+    environment:
+      - WEB_SERVER_URL=http://host.docker.internal:3000  
+      - API_TOKEN=1873920038:AAGbA5l5Uv0qqLRxYrcs1iShTaZ0MBH7eM4
+      - BOT_HOST=0.0.0.0
+      - BOT_PORT=8080
