@@ -5,8 +5,10 @@ services:
     build:
       context: .
       dockerfile: ./web/Dockerfile.web
-    ports:
-      - "3000:3000"
+    container_name: web-server
+    restart: unless-stopped
+    expose:
+      - "3000"
     volumes:
       - ./web/index.html:/app/index.html
       - ./web/package.json:/app/package.json
@@ -14,4 +16,27 @@ services:
       - ./web/scripts.js:/app/scripts.js
       - ./web/images:/app/images
     environment:
-      - TELEGRAM_BOT_URL=http://host.docker.internal:8080  
+      - TELEGRAM_BOT_URL=https://xmilitary.online:5580
+      - NODE_ENV=production
+    networks:
+      - web-network
+
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile.nginx
+    container_name: web-nginx
+    restart: unless-stopped
+    ports:
+      - "8880:80"
+      - "88443:443"
+    volumes:
+      - ./web/images:/app/images:ro
+    depends_on:
+      - web-server
+    networks:
+      - web-network
+
+networks:
+  web-network:
+    driver: bridge

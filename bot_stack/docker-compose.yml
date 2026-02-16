@@ -5,13 +5,35 @@ services:
     build:
       context: .
       dockerfile: ./bot/Dockerfile.bot
-    ports:
-      - "8080:8080"
+    container_name: telegram-bot
+    restart: unless-stopped
+    expose:
+      - "8080"
     volumes:
       - ./bot/bot.py:/app/bot.py
       - ./bot/images:/app/images
     environment:
-      - WEB_SERVER_URL=http://host.docker.internal:3000  
+      - WEB_SERVER_URL=https://xmilitary.online:8880
       - API_TOKEN=1873920038:AAGbA5l5Uv0qqLRxYrcs1iShTaZ0MBH7eM4
       - BOT_HOST=0.0.0.0
       - BOT_PORT=8080
+    networks:
+      - bot-network
+
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile.nginx
+    container_name: bot-nginx
+    restart: unless-stopped
+    ports:
+      - "5580:80"
+      - "55443:443"
+    depends_on:
+      - telegram-bot
+    networks:
+      - bot-network
+
+networks:
+  bot-network:
+    driver: bridge
