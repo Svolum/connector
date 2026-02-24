@@ -3,7 +3,6 @@ const http = require('http');
 const { Server } = require('socket.io');
 const fs = require('fs');
 const path = require('path');
-const fileUpload = require('express-fileupload');
 
 const app = express();
 const server = http.createServer(app);
@@ -22,75 +21,87 @@ if (!fs.existsSync(IMAGES_DIR)) {
 app.use(express.json());
 app.use(express.static(__dirname));
 app.use('/images', express.static(IMAGES_DIR));
-app.use(fileUpload({
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
-}));
 
 // Эндпоинт для получения сообщений от бота
 app.post('/user_message', (req, res) => {
-  const { chat_id, sender_nick, text } = req.body;
-  if (chat_id && sender_nick && text) {
-    io.emit('newMessage', chat_id, sender_nick, text);
-    res.status(200).json({ status: 'success', message: 'Сообщение получено' });
+  const { user_id, place, text } = req.body;
+
+  const chat_id = place?.chat_id;
+
+  if (user_id && chat_id && text) {
+    io.emit('newMessage', user_id, text);
+    res.status(200).json({ status: 'success' });
   } else {
-    res.status(400).json({ error: 'Сообщение не предоставлено' });
+    res.status(400).json({ error: 'Некорректные данные' });
   }
 });
 
 // Эндпоинт для получения изображений от бота
 app.post('/image', (req, res) => {
-  const { chat_id, sender_nick, file_id } = req.body;
-  const image = req.files?.image;
-  
-  if (chat_id && sender_nick && file_id && image) {
-    const file_path = path.join(IMAGES_DIR, `${file_id}.jpg`);
-    
-    image.mv(file_path, (err) => {
-      if (err) {
-        console.error('Ошибка при сохранении изображения:', err);
-        return res.status(500).json({ error: 'Ошибка при сохранении изображения' });
-      }
-      
-      // Создаем URL для доступа к изображению
-      const image_url = `http://${req.headers.host}/images/${file_id}.jpg`;
-      io.emit('newImage', chat_id, sender_nick, file_id, image_url);
-      res.status(200).json({ status: 'success', message: 'Изображение получено' });
-    });
-  } else {
-    res.status(400).json({ error: 'Изображение или параметры не предоставлены' });
+  const { user_id, place, attachments_base64, date_time } = req.body;
+  const chat_id = place?.chat_id;
+
+  if (!user_id || !chat_id || !attachments_base64?.length) {
+    return res.status(400).json({ error: 'Некорректные данные' });
+  }
+
+  try {
+    const buffer = Buffer.from(attachments_base64[0], 'base64');
+    const fileName = `${Date.now()}.jpg`;
+    const filePath = path.join(IMAGES_DIR, fileName);
+
+    fs.writeFileSync(filePath, buffer);
+
+    const image_url = `http://${req.headers.host}/images/${fileName}`;
+
+    io.emit('newImage', user_id, image_url, date_time);
+
+    res.status(200).json({ status: 'success' });
+
+  } catch (err) {
+    console.error('Ошибка сохранения изображения:', err);
+    res.status(500).json({ error: 'Ошибка сохранения изображения' });
   }
 });
 
 // Эндпоинт для обработки нажатий на клавиатуру
 app.post('/keyboard/input', (req, res) => {
-  const { chat_id, sender_nick, button } = req.body;
-  if (chat_id && sender_nick && button) {
-    io.emit('newMessage', chat_id, sender_nick, button);
-    res.status(200).json({ status: 'success', message: 'Сообщение получено' });
+  const { user_id, button, place, date_time } = req.body;
+  const chat_id = place?.chat_id;
+
+  if (user_id && chat_id && button) {
+    io.emit('newMessage', user_id, button);
+    res.status(200).json({ status: 'success' });
   } else {
-    res.status(400).json({ error: 'Сообщение не предоставлено' });
+    res.status(400).json({ error: 'Некорректные данные' });
   }
 });
 
 // Эндпоинт для отправки текста в Telegram
 app.post('/message', async (req, res) => {
-  const { chat_id, text } = req.body;
-  if (!chat_id || !text) {
-    return res.status(400).json({ error: 'Не указаны chat_id или text' });
+  const { user_id, place, text } = req.body;
+  const chat_id = place?.chat_id;
+
+  if (!user_id || !chat_id || !text) {
+    return res.status(400).json({ error: 'Некорректные данные' });
   }
 
   try {
     const response = await fetch(`${TELEGRAM_BOT_URL}/message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id, text })
+      body: JSON.stringify({
+        user_id,
+        place: { chat_id },
+        text
+      })
     });
-    
+
     const data = await response.json();
     res.status(response.status).json(data);
+
   } catch (error) {
-    console.error('Ошибка при отправке в Telegram бот:', error);
-    res.status(500).json({ error: 'Не удалось отправить текст', details: error.message });
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -118,24 +129,30 @@ app.post('/send_image', async (req, res) => {
 
 // Эндпоинт для отправки клавиатуры в Telegram
 app.post('/keyboard/create', async (req, res) => {
-  const { chat_id, title, buttons } = req.body;
-  
-  if (!chat_id || !title || !buttons || buttons.length < 2) {
-    return res.status(400).json({ error: 'Не указаны chat_id, title или недостаточно кнопок' });
+  const { user_id, place, title, buttons } = req.body;
+  const chat_id = place?.chat_id;
+
+  if (!user_id || !chat_id || !title || !buttons || buttons.length < 2) {
+    return res.status(400).json({ error: 'Некорректные данные' });
   }
 
   try {
     const response = await fetch(`${TELEGRAM_BOT_URL}/keyboard/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id, title, buttons })
+      body: JSON.stringify({
+        user_id,
+        place: { chat_id },
+        title,
+        buttons
+      })
     });
-    
+
     const data = await response.json();
     res.status(response.status).json(data);
+
   } catch (error) {
-    console.error('Ошибка при отправке клавиатуры в Telegram бот:', error);
-    res.status(500).json({ error: 'Не удалось отправить клавиатуру', details: error.message });
+    res.status(500).json({ error: error.message });
   }
 });
 
