@@ -4,6 +4,9 @@ import logging
 from pathlib import Path
 from typing import Dict, Any
 
+import base64
+from datetime import datetime
+
 import aiohttp
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -48,8 +51,10 @@ async def notify_web_server(endpoint: str, data: Dict[str, Any]) -> bool:
 @app.post("/message")
 async def send_text_to_user(data: dict):
     """Отправка текстового сообщения пользователю"""
-    chat_id = data.get("chat_id")
-    text = data.get("text")
+    user_id = data.get("user_id") or None
+    place = data.get("place") or {}
+    chat_id = place.get("chat_id") or None
+    text = data.get("text") or None
     
     if not chat_id or not text:
         raise HTTPException(status_code=400, detail="chat_id и text обязательны")
@@ -65,9 +70,12 @@ async def send_text_to_user(data: dict):
 @app.post("/keyboard/create")
 async def send_inline_keyboard_to_user(data: dict):
     """Отправка inline клавиатуры пользователю"""
-    chat_id = data.get("chat_id")
     msg_title = data.get("title")
-    buttons = data.get("buttons")
+    user_id = data.get("user_id") or None
+    place = data.get("place") or {}
+    chat_id = place.get("chat_id") or None
+    title = data.get("title") or None
+    buttons = data.get("buttons") or []
     
     if not chat_id or not msg_title or not buttons:
         raise HTTPException(status_code=400, detail="chat_id, title и buttons обязательны")
@@ -76,7 +84,8 @@ async def send_inline_keyboard_to_user(data: dict):
         raise HTTPException(status_code=400, detail="buttons должно содержать хотя бы 2 кнопки")
     
     keyboard = [
-        [InlineKeyboardButton(button, callback_data=button)] for button in buttons
+        [InlineKeyboardButton(btn.get("text"), callback_data=btn.get("text"))]
+        for btn in buttons
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -94,26 +103,25 @@ async def send_inline_keyboard_to_user(data: dict):
 
 @app.post("/image")
 async def send_image_to_user(data: dict):
-    """Отправка изображения пользователю"""
-    chat_id = data.get("chat_id")
-    image_url = data.get("image_url")
-    
-    if not chat_id or not image_url:
-        raise HTTPException(status_code=400, detail="chat_id и image_url обязательны")
-    
+
+    user_id = data.get("user_id")
+    place = data.get("place") or {}
+    chat_id = place.get("chat_id")
+    attachments = data.get("attachments_base64") or []
+
+    if not chat_id or not attachments:
+        raise HTTPException(status_code=400, detail="chat_id и attachments обязательны")
+
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(image_url) as resp:
-                if resp.status == 200:
-                    image_data = await resp.read()
-                    await telegram_app.bot.send_photo(
-                        chat_id=chat_id,
-                        photo=image_data
-                    )
-                    logger.info(f"Изображение отправлено пользователю {chat_id}")
-                    return {"status": "success", "message": "Изображение отправлено"}
-                else:
-                    raise HTTPException(status_code=500, detail="Не удалось загрузить изображение")
+        image_bytes = base64.b64decode(attachments[0])
+
+        await telegram_app.bot.send_photo(
+            chat_id=chat_id,
+            photo=image_bytes
+        )
+
+        return {"status": "success"}
+
     except Exception as e:
         logger.error(f"Ошибка при отправке изображения: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -136,11 +144,13 @@ async def button_click(update: Update, context):
     sender_nick = query.from_user.username or query.from_user.full_name
     button = query.data
     
-    # Уведомляем веб-сервер
-    await notify_web_server('/keyboard/input', {
-        'chat_id': str(chat_id),
-        'sender_nick': sender_nick,
-        'button': button
+
+    await notify_web_server('/user_message', {
+        "user_id": str(chat_id),
+        "place": {
+            "chat_id": str(chat_id)
+        },
+        "text": "Пользователь начал диалог"
     })
     
     # Обновляем сообщение
@@ -164,62 +174,43 @@ async def start(update: Update, context):
     await update.message.reply_text(welcome_text)
     
     # Уведомляем веб-сервер о новом пользователе
+    chat_id = update.effective_chat.id
+    
     await notify_web_server('/user_message', {
-        'chat_id': str(update.message.chat_id),
-        'sender_nick': update.message.from_user.username or "Новый пользователь",
-        'text': "Пользователь начал диалог"
+        "user_id": str(chat_id),
+        "place": {
+            "chat_id": str(chat_id)
+        },
+        "text": "Пользователь начал диалог"
     })
 
 async def handle_message_from_user(update: Update, context):
     """Обработка текстовых сообщений от пользователя"""
+
     message_text = update.message.text
-    sender_nick = update.message.from_user.username or update.message.from_user.full_name
     chat_id = update.message.chat_id
-    
+
     await notify_web_server('/user_message', {
-        'chat_id': str(chat_id),
-        'sender_nick': sender_nick,
-        'text': message_text
+        "user_id": str(chat_id),
+        "place": {
+            "chat_id": str(chat_id)
+        },
+        "text": message_text
     })
 
 async def handle_photo_from_user(update: Update, context):
-    """Обработка фотографий от пользователя"""
-    if not update.message.photo:
-        return
-    
-    photo = update.message.photo[-1]
-    sender_nick = update.message.from_user.username or update.message.from_user.full_name
+    with open(file_path, "rb") as f:
+        encoded = base64.b64encode(f.read()).decode("utf-8")
+
     chat_id = update.message.chat_id
-    
-    # Получаем файл
-    file = await photo.get_file()
-    file_path = IMAGES_DIR / f"{photo.file_id}.jpg"
-    
-    try:
-        # Скачиваем файл
-        await file.download_to_drive(file_path)
-        
-        # Отправляем на веб-сервер
-        with open(file_path, 'rb') as f:
-            form_data = aiohttp.FormData()
-            form_data.add_field('image', f, filename=f"{photo.file_id}.jpg", content_type='image/jpeg')
-            form_data.add_field('chat_id', str(chat_id))
-            form_data.add_field('sender_nick', sender_nick)
-            form_data.add_field('file_id', photo.file_id)
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.post(f"{WEB_SERVER_URL}/image", data=form_data) as response:
-                    if response.status != 200:
-                        logger.error(f"Ошибка при отправке изображения: {await response.text()}")
-        
-        logger.info(f"Изображение {photo.file_id} обработано")
-        
-    except Exception as e:
-        logger.error(f"Ошибка при обработке изображения: {e}")
-    finally:
-        # Удаляем временный файл
-        if file_path.exists():
-            file_path.unlink()
+    await notify_web_server('/image', {
+        "user_id": str(chat_id),
+        "place": {
+            "chat_id": str(chat_id)
+        },
+        "attachments_base64": [encoded],
+        "date_time": datetime.now().isoformat()
+    })
 
 async def error_handler(update: Update, context):
     """Обработка ошибок"""
