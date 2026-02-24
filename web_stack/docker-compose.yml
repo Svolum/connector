@@ -1,14 +1,10 @@
-version: '3.8'
-
 services:
   web-server:
     build:
       context: .
       dockerfile: ./web/Dockerfile.web
     container_name: web-server
-    restart: unless-stopped
-    expose:
-      - "3000"
+    restart: no
     volumes:
       - ./web/index.html:/app/index.html
       - ./web/package.json:/app/package.json
@@ -16,28 +12,17 @@ services:
       - ./web/scripts.js:/app/scripts.js
       - ./web/images:/app/images
     environment:
-      - TELEGRAM_BOT_URL=https://xmilitary.online:55443
+      - TELEGRAM_BOT_URL=https://tgbot.xmilitary.online
       - NODE_ENV=production
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.web_interface.rule=Host(`web.xmilitary.online`)"
+      - "traefik.http.routers.web_interface.entrypoints=websecure"
+      - "traefik.http.routers.web_interface.tls=true"
+      - "traefik.http.services.web_interface.loadbalancer.server.port=3000"
     networks:
-      - web-network
-
-  nginx:
-    build:
-      context: ./nginx
-      dockerfile: Dockerfile.nginx
-    container_name: web-nginx
-    restart: unless-stopped
-    ports:
-      - "8880:80"
-      - "88443:443"
-    volumes:
-      - ./web/images:/app/images:ro
-      - /etc/letsencrypt:/etc/letsencrypt:ro  # 👈 Проброс сертификатов
-    depends_on:
-      - web-server
-    networks:
-      - web-network
+      - proxy_traefik
 
 networks:
-  web-network:
-    driver: bridge
+  proxy_traefik:
+    external: true

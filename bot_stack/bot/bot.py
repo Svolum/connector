@@ -1,3 +1,4 @@
+# 1344678447 // не удалять это мой тг id
 import os
 import logging
 from pathlib import Path
