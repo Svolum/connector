@@ -12,6 +12,8 @@ const io = new Server(server);
 const TELEGRAM_BOT_URL = process.env.TELEGRAM_BOT_URL || 'http://localhost:8080';
 const IMAGES_DIR = path.join(__dirname, 'images');
 
+
+
 // Создаем папку для хранения изображений
 if (!fs.existsSync(IMAGES_DIR)) {
   fs.mkdirSync(IMAGES_DIR, { recursive: true });
@@ -27,9 +29,16 @@ app.post('/user_message', (req, res) => {
   const { user_id, place, text } = req.body;
 
   const chat_id = place?.chat_id;
+  console.log('BODY:', req.body);
+  console.log('chat_id:', chat_id);
+  console.log('text:', text);
 
   if (user_id && chat_id && text) {
-    io.emit('newMessage', user_id, text);
+    io.emit('newMessage', 
+        user_id,
+        place,
+        text
+    );
     res.status(200).json({ status: 'success' });
   } else {
     res.status(400).json({ error: 'Некорректные данные' });
@@ -52,7 +61,8 @@ app.post('/image', (req, res) => {
 
     fs.writeFileSync(filePath, buffer);
 
-    const image_url = `http://${req.headers.host}/images/${fileName}`;
+    const proto = req.headers['x-forwarded-proto'] || req.protocol;
+    const image_url = `${proto}://${req.headers.host}/images/${fileName}`;
 
     io.emit('newImage', user_id, image_url, date_time);
 
@@ -97,7 +107,14 @@ app.post('/message', async (req, res) => {
       })
     });
 
-    const data = await response.json();
+    const raw = await response.text();
+    let data;
+
+    try {
+        data = JSON.parse(raw);
+    } catch {
+        data = { raw };
+    }
     res.status(response.status).json(data);
 
   } catch (error) {
@@ -107,20 +124,42 @@ app.post('/message', async (req, res) => {
 
 // Эндпоинт для отправки изображения в Telegram
 app.post('/send_image', async (req, res) => {
-  const { chat_id, image_url } = req.body;
-  if (!chat_id || !image_url) {
-    return res.status(400).json({ error: 'Не указаны chat_id или image_url' });
+  const { user_id, place, image_url } = req.body;
+  const chat_id = place?.chat_id;
+
+  if (!user_id || !chat_id || !image_url) {
+    return res.status(400).json({ error: 'Некорректные данные' });
   }
 
   try {
+    const imageResponse = await fetch(image_url);
+    if (!imageResponse.ok) {
+      return res.status(400).json({ error: 'Не удалось скачать изображение по image_url' });
+    }
+
+    const arrayBuffer = await imageResponse.arrayBuffer();
+    const base64Image = Buffer.from(arrayBuffer).toString('base64');
+
     const response = await fetch(`${TELEGRAM_BOT_URL}/image`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id, image_url })
+      body: JSON.stringify({
+        user_id,
+        place: { chat_id },
+        attachments_base64: [base64Image]
+      })
     });
-    
-    const data = await response.json();
+
+    const raw = await response.text();
+    let data;
+
+    try {
+        data = JSON.parse(raw);
+    } catch {
+        data = { raw };
+    }
     res.status(response.status).json(data);
+
   } catch (error) {
     console.error('Ошибка при отправке изображения в Telegram бот:', error);
     res.status(500).json({ error: 'Не удалось отправить изображение', details: error.message });
@@ -148,7 +187,14 @@ app.post('/keyboard/create', async (req, res) => {
       })
     });
 
-    const data = await response.json();
+    const raw = await response.text();
+    let data;
+
+    try {
+        data = JSON.parse(raw);
+    } catch {
+        data = { raw };
+    }
     res.status(response.status).json(data);
 
   } catch (error) {
@@ -168,6 +214,7 @@ app.get('/health', (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`🌐 Веб-сервер запущен на порту ${PORT}`);
-  console.log(`🤖 URL бота: ${TELEGRAM_BOT_URL}`);
+  console.log(`Веб-сервер запущен на порту ${PORT}`);
+  console.log(`URL бота: ${TELEGRAM_BOT_URL}`);
 });
+

@@ -3,7 +3,6 @@ services:
     build:
       context: .
       dockerfile: ./web/Dockerfile.web
-    container_name: web-server
     restart: no
     volumes:
       - ./web/index.html:/app/index.html
@@ -17,6 +16,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.web_interface.rule=Host(`web.xmilitary.online`)"
+      - "traefik.http.routers.web_interface.service=web_interface"
       - "traefik.http.routers.web_interface.entrypoints=websecure"
       - "traefik.http.routers.web_interface.tls=true"
       - "traefik.http.services.web_interface.loadbalancer.server.port=3000"

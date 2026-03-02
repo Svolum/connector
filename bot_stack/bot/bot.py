@@ -3,6 +3,7 @@ import os
 import logging
 from pathlib import Path
 from typing import Dict, Any
+import asyncio
 
 import base64
 from datetime import datetime
@@ -36,16 +37,29 @@ IMAGES_DIR = Path("/app/images")
 IMAGES_DIR.mkdir(exist_ok=True)
 
 async def notify_web_server(endpoint: str, data: Dict[str, Any]) -> bool:
-    """Отправка уведомления на веб-сервер"""
     try:
-        async with aiohttp.ClientSession() as session:
+        timeout = aiohttp.ClientTimeout(total=5)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(f"{WEB_SERVER_URL}{endpoint}", json=data) as response:
+                response_text = await response.text()
                 if response.status != 200:
-                    logger.error(f"Ошибка при отправке на веб-сервер: {await response.text()}")
+                    logger.error(
+                        f"Ошибка при отправке на веб-сервер. "
+                        f"URL={WEB_SERVER_URL}{endpoint}, status={response.status}, body={response_text}"
+                    )
                     return False
+
+                logger.info(f"Успешно отправлено на {WEB_SERVER_URL}{endpoint}")
                 return True
+
+    except asyncio.TimeoutError:
+        logger.error(f"Таймаут при отправке на веб-сервер: {WEB_SERVER_URL}{endpoint}")
+        return False
     except aiohttp.ClientError as e:
         logger.error(f"Ошибка подключения к веб-серверу: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Неожиданная ошибка при отправке на веб-сервер: {e}")
         return False
 
 @app.post("/message")
@@ -55,10 +69,10 @@ async def send_text_to_user(data: dict):
     place = data.get("place") or {}
     chat_id = place.get("chat_id") or None
     text = data.get("text") or None
-    
+
     if not chat_id or not text:
         raise HTTPException(status_code=400, detail="chat_id и text обязательны")
-    
+
     try:
         await telegram_app.bot.send_message(chat_id=chat_id, text=text)
         logger.info(f"Текст отправлен пользователю {chat_id}")
@@ -76,19 +90,19 @@ async def send_inline_keyboard_to_user(data: dict):
     chat_id = place.get("chat_id") or None
     title = data.get("title") or None
     buttons = data.get("buttons") or []
-    
+
     if not chat_id or not msg_title or not buttons:
         raise HTTPException(status_code=400, detail="chat_id, title и buttons обязательны")
-    
+
     if len(buttons) < 2:
         raise HTTPException(status_code=400, detail="buttons должно содержать хотя бы 2 кнопки")
-    
+
     keyboard = [
         [InlineKeyboardButton(btn.get("text"), callback_data=btn.get("text"))]
         for btn in buttons
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
+
     try:
         await telegram_app.bot.send_message(
             chat_id=chat_id,
@@ -136,28 +150,27 @@ async def health_check():
     }
 
 async def button_click(update: Update, context):
-    """Обработка нажатий на кнопки клавиатуры"""
     query = update.callback_query
     await query.answer()
-    
-    chat_id = query.message.chat_id
-    sender_nick = query.from_user.username or query.from_user.full_name
-    button = query.data
-    
 
-    await notify_web_server('/user_message', {
+    chat_id = query.message.chat_id
+    button = query.data
+    message_id = query.message.message_id
+
+    await notify_web_server('/keyboard/input', {
         "user_id": str(chat_id),
+        "button": button if button is not None else None,
         "place": {
-            "chat_id": str(chat_id)
+            "chat_id": str(chat_id),
+            "message_id": str(message_id) if message_id is not None else None
         },
-        "text": "Пользователь начал диалог"
+        "date_time": datetime.now().astimezone().isoformat()
     })
-    
-    # Обновляем сообщение
+
     try:
         await telegram_app.bot.edit_message_text(
             chat_id=chat_id,
-            message_id=query.message.message_id,
+            message_id=message_id,
             text=f"{query.message.text} ✅ {button}"
         )
     except TelegramError as e:
@@ -172,10 +185,10 @@ async def start(update: Update, context):
         "💬 Ответы из веб-интерфейса будут приходить сюда."
     )
     await update.message.reply_text(welcome_text)
-    
+
     # Уведомляем веб-сервер о новом пользователе
     chat_id = update.effective_chat.id
-    
+
     await notify_web_server('/user_message', {
         "user_id": str(chat_id),
         "place": {
@@ -189,6 +202,8 @@ async def handle_message_from_user(update: Update, context):
 
     message_text = update.message.text
     chat_id = update.message.chat_id
+    logger.info(f"CHAT_ID: {chat_id}")
+    logger.info(f"MESSAGE_TEXT: {message_text}")
 
     await notify_web_server('/user_message', {
         "user_id": str(chat_id),
@@ -199,18 +214,24 @@ async def handle_message_from_user(update: Update, context):
     })
 
 async def handle_photo_from_user(update: Update, context):
-    with open(file_path, "rb") as f:
-        encoded = base64.b64encode(f.read()).decode("utf-8")
+    try:
+        photo = update.message.photo[-1]  # самое большое фото
+        tg_file = await photo.get_file()
+        image_bytes = await tg_file.download_as_bytearray()
 
-    chat_id = update.message.chat_id
-    await notify_web_server('/image', {
-        "user_id": str(chat_id),
-        "place": {
-            "chat_id": str(chat_id)
-        },
-        "attachments_base64": [encoded],
-        "date_time": datetime.now().isoformat()
-    })
+        encoded = base64.b64encode(bytes(image_bytes)).decode("utf-8")
+        chat_id = update.message.chat_id
+
+        await notify_web_server('/image', {
+            "user_id": str(chat_id),
+            "place": {
+                "chat_id": str(chat_id)
+            },
+            "attachments_base64": [encoded],
+            "date_time": datetime.now().astimezone().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Ошибка при обработке фото: {e}")
 
 async def error_handler(update: Update, context):
     """Обработка ошибок"""
@@ -223,29 +244,30 @@ def run_fastapi():
 def main():
     """Основная функция"""
     global telegram_app
-    
+
     from datetime import datetime
-    
+
     # Создаем приложение Telegram бота
     telegram_app = Application.builder().token(TELEGRAM_TOKEN).build()
-    
+
     # Добавляем обработчики
     telegram_app.add_handler(CommandHandler("start", start))
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message_from_user))
     telegram_app.add_handler(MessageHandler(filters.PHOTO, handle_photo_from_user))
     telegram_app.add_handler(CallbackQueryHandler(button_click))
-    
+
     # Добавляем обработчик ошибок
     telegram_app.add_error_handler(error_handler)
-    
+
     # Запускаем FastAPI в отдельном потоке
     import threading
     threading.Thread(target=run_fastapi, daemon=True).start()
-    
+
     logger.info(f"Бот запущен. Веб-сервер: {WEB_SERVER_URL}")
-    
+
     # Запускаем бота
     telegram_app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
     main()
+
