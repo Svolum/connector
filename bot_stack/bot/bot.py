@@ -1,273 +1,532 @@
-# 1344678447 // не удалять это мой тг id
-import os
-import logging
-from pathlib import Path
-from typing import Dict, Any
-import asyncio
-
 import base64
-from datetime import datetime
+import io
+import logging
+import os
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from typing import Any
 
-import aiohttp
-import uvicorn
-from fastapi import FastAPI, HTTPException
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
-from telegram.error import TelegramError
-
-# Настройка логирования
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+import httpx
+from fastapi import FastAPI, HTTPException, Request
+from pydantic import BaseModel, Field
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import (
+    Application,
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
 )
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+
 logger = logging.getLogger(__name__)
 
-# Конфигурация
-TELEGRAM_TOKEN = os.getenv('API_TOKEN')
-WEB_SERVER_URL = os.getenv('WEB_SERVER_URL', 'http://localhost:3000')
-BOT_HOST = os.getenv('BOT_HOST', '0.0.0.0')
-BOT_PORT = int(os.getenv('BOT_PORT', '8080'))
 
-# Глобальные переменные
-telegram_app = None
-app = FastAPI(title="Telegram Bot API")
+# =========================
+# ENV
+# =========================
 
-# Создаем директорию для временного хранения изображений
-IMAGES_DIR = Path("/app/images")
-IMAGES_DIR.mkdir(exist_ok=True)
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_MODE = os.getenv("BOT_MODE", "polling").lower()
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+WEB_API_URL = os.getenv("WEB_API_URL")
 
-async def notify_web_server(endpoint: str, data: Dict[str, Any]) -> bool:
+HTTP_TIMEOUT = float(15)
+
+
+telegram_app: Application | None = None
+http_client: httpx.AsyncClient | None = None
+
+
+# =========================
+# Pydantic models
+# =========================
+
+class PlaceChat(BaseModel):
+    chat_id: str | int | None = None
+
+
+class PlaceMessage(BaseModel):
+    chat_id: str | int | None = None
+    message_id: str | int | None = None
+
+
+class SendMessageRequest(BaseModel):
+    user_id: str | int | None = None
+    place: PlaceChat
+    text: str
+
+
+class KeyboardButtonPayload(BaseModel):
+    text: str
+
+
+class CreateKeyboardRequest(BaseModel):
+    user_id: str | int | None = None
+    place: PlaceChat
+    title: str
+    buttons: list[KeyboardButtonPayload] = Field(default_factory=list)
+
+
+class ApiResponse(BaseModel):
+    ok: bool
+    detail: str | None = None
+    data: dict[str, Any] | None = None
+
+
+# =========================
+# Helpers
+# =========================
+
+def require_telegram_app() -> Application:
+    if telegram_app is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Telegram application is not initialized",
+        )
+    return telegram_app
+
+
+def require_http_client() -> httpx.AsyncClient:
+    if http_client is None:
+        raise RuntimeError("HTTP client is not initialized")
+    return http_client
+
+
+def normalize_base_url(url: str) -> str:
+    return url.rstrip("/")
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def telegram_datetime_iso(dt: datetime | None) -> str:
+    if dt is None:
+        return now_iso()
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+
+    return dt.isoformat()
+
+
+async def post_to_web_api(path: str, payload: dict[str, Any]) -> None:
+    """
+    Отправляет событие из Telegram в готовый веб-интерфейс.
+    """
+    if not WEB_API_URL:
+        logger.warning("WEB_API_URL is not set. Payload was not sent: %s", payload)
+        return
+
+    client = require_http_client()
+
+    url = f"{normalize_base_url(WEB_API_URL)}{path}"
+
     try:
-        timeout = aiohttp.ClientTimeout(total=5)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(f"{WEB_SERVER_URL}{endpoint}", json=data) as response:
-                response_text = await response.text()
-                if response.status != 200:
-                    logger.error(
-                        f"Ошибка при отправке на веб-сервер. "
-                        f"URL={WEB_SERVER_URL}{endpoint}, status={response.status}, body={response_text}"
-                    )
-                    return False
+        response = await client.post(url, json=payload)
+        response.raise_for_status()
+    except httpx.HTTPError as error:
+        logger.exception("Failed to send payload to web api %s: %s", url, error)
 
-                logger.info(f"Успешно отправлено на {WEB_SERVER_URL}{endpoint}")
-                return True
 
-    except asyncio.TimeoutError:
-        logger.error(f"Таймаут при отправке на веб-сервер: {WEB_SERVER_URL}{endpoint}")
-        return False
-    except aiohttp.ClientError as e:
-        logger.error(f"Ошибка подключения к веб-серверу: {e}")
-        return False
-    except Exception as e:
-        logger.error(f"Неожиданная ошибка при отправке на веб-сервер: {e}")
-        return False
+async def download_telegram_file_as_base64(file_id: str, context: ContextTypes.DEFAULT_TYPE) -> str:
+    """
+    Скачивает файл из Telegram и возвращает base64-строку.
+    """
+    tg_file = await context.bot.get_file(file_id)
 
-@app.post("/message")
-async def send_text_to_user(data: dict):
-    """Отправка текстового сообщения пользователю"""
-    user_id = data.get("user_id") or None
-    place = data.get("place") or {}
-    chat_id = place.get("chat_id") or None
-    text = data.get("text") or None
+    buffer = io.BytesIO()
+    await tg_file.download_to_memory(out=buffer)
 
-    if not chat_id or not text:
-        raise HTTPException(status_code=400, detail="chat_id и text обязательны")
+    file_bytes = buffer.getvalue()
+    return base64.b64encode(file_bytes).decode("ascii")
+
+
+def get_user_id(update: Update) -> str | None:
+    if update.effective_user is None:
+        return None
+    return str(update.effective_user.id)
+
+
+def get_chat_id(update: Update) -> str | None:
+    if update.effective_chat is None:
+        return None
+    return str(update.effective_chat.id)
+
+
+# =========================
+# Telegram handlers
+# =========================
+
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.message:
+        await update.message.reply_text("Бот запущен.")
+
+
+async def ping_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.message:
+        await update.message.reply_text("pong")
+
+
+async def handle_user_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Telegram -> bot -> WEB_API_URL/user_message
+    """
+    message = update.message
+
+    if message is None:
+        return
+
+    if message.text is None:
+        return
+
+    payload = {
+        "user_id": get_user_id(update),
+        "place": {
+            "chat_id": get_chat_id(update),
+        },
+        "text": message.text,
+    }
+
+    await post_to_web_api("/user_message", payload)
+
+
+async def handle_user_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Поддержка обычных Telegram-фото.
+
+    Telegram photo -> base64 -> WEB_API_URL/image
+    """
+    message = update.message
+
+    if message is None:
+        return
+
+    if not message.photo:
+        return
+
+    # Берём самый большой вариант фото.
+    photo = message.photo[-1]
 
     try:
-        await telegram_app.bot.send_message(chat_id=chat_id, text=text)
-        logger.info(f"Текст отправлен пользователю {chat_id}")
-        return {"status": "success", "message": "Текст отправлен"}
-    except TelegramError as e:
-        logger.error(f"Ошибка Telegram при отправке текста: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        image_base64 = await download_telegram_file_as_base64(photo.file_id, context)
+        attachments_base64 = [image_base64]
+    except Exception as error:
+        logger.exception("Failed to download Telegram photo: %s", error)
+        attachments_base64 = [None]
 
-@app.post("/keyboard/create")
-async def send_inline_keyboard_to_user(data: dict):
-    """Отправка inline клавиатуры пользователю"""
-    msg_title = data.get("title")
-    user_id = data.get("user_id") or None
-    place = data.get("place") or {}
-    chat_id = place.get("chat_id") or None
-    title = data.get("title") or None
-    buttons = data.get("buttons") or []
+    payload = {
+        "user_id": get_user_id(update),
+        "place": {
+            "chat_id": get_chat_id(update),
+        },
+        "attachments_base64": attachments_base64,
+        "date_time": telegram_datetime_iso(message.date),
+    }
 
-    if not chat_id or not msg_title or not buttons:
-        raise HTTPException(status_code=400, detail="chat_id, title и buttons обязательны")
+    await post_to_web_api("/image", payload)
 
-    if len(buttons) < 2:
-        raise HTTPException(status_code=400, detail="buttons должно содержать хотя бы 2 кнопки")
+
+async def handle_user_image_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Поддержка изображений, отправленных как документ.
+
+    Telegram document image/* -> base64 -> WEB_API_URL/image
+    """
+    message = update.message
+
+    if message is None:
+        return
+
+    document = message.document
+
+    if document is None:
+        return
+
+    mime_type = document.mime_type or ""
+
+    if not mime_type.startswith("image/"):
+        return
+
+    try:
+        image_base64 = await download_telegram_file_as_base64(document.file_id, context)
+        attachments_base64 = [image_base64]
+    except Exception as error:
+        logger.exception("Failed to download Telegram image document: %s", error)
+        attachments_base64 = [None]
+
+    payload = {
+        "user_id": get_user_id(update),
+        "place": {
+            "chat_id": get_chat_id(update),
+        },
+        "attachments_base64": attachments_base64,
+        "date_time": telegram_datetime_iso(message.date),
+    }
+
+    await post_to_web_api("/image", payload)
+
+
+async def handle_keyboard_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Telegram inline button click -> WEB_API_URL/keyboard/input
+    """
+    query = update.callback_query
+
+    if query is None:
+        return
+
+    await query.answer()
+
+    message = query.message
+
+    payload = {
+        "user_id": str(query.from_user.id) if query.from_user else None,
+        "button": query.data,
+        "place": {
+            "chat_id": str(message.chat_id) if message else None,
+            "message_id": str(message.message_id) if message else None,
+        },
+        "date_time": now_iso(),
+    }
+
+    await post_to_web_api("/keyboard/input", payload)
+
+
+def create_telegram_app() -> Application:
+    if not BOT_TOKEN:
+        raise RuntimeError("BOT_TOKEN is required")
+
+    application = Application.builder().token(BOT_TOKEN).build()
+
+    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("ping", ping_command))
+
+    application.add_handler(CallbackQueryHandler(handle_keyboard_callback))
+
+    application.add_handler(MessageHandler(filters.PHOTO, handle_user_photo))
+    application.add_handler(MessageHandler(filters.Document.IMAGE, handle_user_image_document))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_text_message))
+
+    return application
+
+
+# =========================
+# FastAPI lifespan
+# =========================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global telegram_app
+    global http_client
+
+    if BOT_MODE not in {"polling", "webhook"}:
+        raise RuntimeError("BOT_MODE must be either 'polling' or 'webhook'")
+
+    if BOT_MODE == "webhook" and not WEBHOOK_URL:
+        raise RuntimeError("WEBHOOK_URL is required when BOT_MODE=webhook")
+
+    telegram_app = create_telegram_app()
+    http_client = httpx.AsyncClient(
+        timeout=HTTP_TIMEOUT,
+        trust_env=False,
+    )
+
+    logger.info("Initializing Telegram application")
+    await telegram_app.initialize()
+    await telegram_app.start()
+
+    if BOT_MODE == "polling":
+        logger.info("Starting Telegram bot in polling mode")
+        await telegram_app.bot.delete_webhook(drop_pending_updates=True)
+
+        if telegram_app.updater is None:
+            raise RuntimeError("Telegram updater is not available")
+
+        await telegram_app.updater.start_polling()
+
+    elif BOT_MODE == "webhook":
+        logger.info("Starting Telegram bot in webhook mode: %s", WEBHOOK_URL)
+        await telegram_app.bot.set_webhook(url=WEBHOOK_URL)
+
+    try:
+        yield
+
+    finally:
+        logger.info("Shutting down application")
+
+        if telegram_app is not None:
+            if BOT_MODE == "polling" and telegram_app.updater is not None:
+                await telegram_app.updater.stop()
+
+            if BOT_MODE == "webhook":
+                await telegram_app.bot.delete_webhook(drop_pending_updates=False)
+
+            await telegram_app.stop()
+            await telegram_app.shutdown()
+
+        if http_client is not None:
+            await http_client.aclose()
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+# =========================
+# FastAPI endpoints
+# =========================
+
+@app.get("/")
+async def root():
+    return {
+        "status": "ok",
+        "bot_mode": BOT_MODE,
+    }
+
+
+@app.get("/health")
+async def health():
+    return {
+        "status": "healthy",
+    }
+
+
+@app.post("/message", response_model=ApiResponse)
+async def send_message(payload: SendMessageRequest):
+    """
+    API тг бота.
+
+    Внешний сервис вызывает /message,
+    бот отправляет сообщение пользователю в Telegram.
+    """
+    application = require_telegram_app()
+
+    chat_id = payload.place.chat_id
+
+    if chat_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="place.chat_id is required",
+        )
+
+    try:
+        sent_message = await application.bot.send_message(
+            chat_id=chat_id,
+            text=payload.text,
+        )
+
+        return ApiResponse(
+            ok=True,
+            data={
+                "chat_id": str(sent_message.chat_id),
+                "message_id": str(sent_message.message_id),
+            },
+        )
+
+    except Exception as error:
+        logger.exception("Failed to send Telegram message: %s", error)
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to send Telegram message",
+        )
+
+
+@app.post("/keyboard/create", response_model=ApiResponse)
+async def create_keyboard(payload: CreateKeyboardRequest):
+    """
+    API тг бота.
+
+    Внешний сервис вызывает /keyboard/create,
+    бот отправляет inline-клавиатуру пользователю в Telegram.
+    """
+    application = require_telegram_app()
+
+    chat_id = payload.place.chat_id
+
+    if chat_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="place.chat_id is required",
+        )
+
+    if not payload.buttons:
+        raise HTTPException(
+            status_code=400,
+            detail="buttons must not be empty",
+        )
 
     keyboard = [
-        [InlineKeyboardButton(btn.get("text"), callback_data=btn.get("text"))]
-        for btn in buttons
+        [
+            InlineKeyboardButton(
+                text=button.text,
+                callback_data=button.text,
+            )
+        ]
+        for button in payload.buttons
     ]
+
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     try:
-        await telegram_app.bot.send_message(
+        sent_message = await application.bot.send_message(
             chat_id=chat_id,
-            text=msg_title,
-            reply_markup=reply_markup
-        )
-        logger.info(f"Клавиатура отправлена пользователю {chat_id}")
-        return {"status": "success", "message": "Клавиатура отправлена"}
-    except TelegramError as e:
-        logger.error(f"Ошибка Telegram при отправке клавиатуры: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/image")
-async def send_image_to_user(data: dict):
-
-    user_id = data.get("user_id")
-    place = data.get("place") or {}
-    chat_id = place.get("chat_id")
-    attachments = data.get("attachments_base64") or []
-
-    if not chat_id or not attachments:
-        raise HTTPException(status_code=400, detail="chat_id и attachments обязательны")
-
-    try:
-        image_bytes = base64.b64decode(attachments[0])
-
-        await telegram_app.bot.send_photo(
-            chat_id=chat_id,
-            photo=image_bytes
+            text=payload.title,
+            reply_markup=reply_markup,
         )
 
-        return {"status": "success"}
-
-    except Exception as e:
-        logger.error(f"Ошибка при отправке изображения: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/health")
-async def health_check():
-    """Проверка здоровья сервиса"""
-    return {
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "web_server_url": WEB_SERVER_URL
-    }
-
-async def button_click(update: Update, context):
-    query = update.callback_query
-    await query.answer()
-
-    chat_id = query.message.chat_id
-    button = query.data
-    message_id = query.message.message_id
-
-    await notify_web_server('/keyboard/input', {
-        "user_id": str(chat_id),
-        "button": button if button is not None else None,
-        "place": {
-            "chat_id": str(chat_id),
-            "message_id": str(message_id) if message_id is not None else None
-        },
-        "date_time": datetime.now().astimezone().isoformat()
-    })
-
-    try:
-        await telegram_app.bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=message_id,
-            text=f"{query.message.text} ✅ {button}"
-        )
-    except TelegramError as e:
-        logger.error(f"Ошибка при обновлении сообщения: {e}")
-
-async def start(update: Update, context):
-    """Обработка команды /start"""
-    welcome_text = (
-        "👋 Привет! Я бот для связи с веб-интерфейсом.\n\n"
-        "📝 Отправляй мне сообщения или изображения, "
-        "и они появятся в веб-интерфейсе.\n"
-        "💬 Ответы из веб-интерфейса будут приходить сюда."
-    )
-    await update.message.reply_text(welcome_text)
-
-    # Уведомляем веб-сервер о новом пользователе
-    chat_id = update.effective_chat.id
-
-    await notify_web_server('/user_message', {
-        "user_id": str(chat_id),
-        "place": {
-            "chat_id": str(chat_id)
-        },
-        "text": "Пользователь начал диалог"
-    })
-
-async def handle_message_from_user(update: Update, context):
-    """Обработка текстовых сообщений от пользователя"""
-
-    message_text = update.message.text
-    chat_id = update.message.chat_id
-    logger.info(f"CHAT_ID: {chat_id}")
-    logger.info(f"MESSAGE_TEXT: {message_text}")
-
-    await notify_web_server('/user_message', {
-        "user_id": str(chat_id),
-        "place": {
-            "chat_id": str(chat_id)
-        },
-        "text": message_text
-    })
-
-async def handle_photo_from_user(update: Update, context):
-    try:
-        photo = update.message.photo[-1]  # самое большое фото
-        tg_file = await photo.get_file()
-        image_bytes = await tg_file.download_as_bytearray()
-
-        encoded = base64.b64encode(bytes(image_bytes)).decode("utf-8")
-        chat_id = update.message.chat_id
-
-        await notify_web_server('/image', {
-            "user_id": str(chat_id),
-            "place": {
-                "chat_id": str(chat_id)
+        return ApiResponse(
+            ok=True,
+            data={
+                "chat_id": str(sent_message.chat_id),
+                "message_id": str(sent_message.message_id),
             },
-            "attachments_base64": [encoded],
-            "date_time": datetime.now().astimezone().isoformat()
-        })
-    except Exception as e:
-        logger.error(f"Ошибка при обработке фото: {e}")
+        )
 
-async def error_handler(update: Update, context):
-    """Обработка ошибок"""
-    logger.error(f"Ошибка при обработке обновления {update}: {context.error}")
+    except Exception as error:
+        logger.exception("Failed to send Telegram keyboard: %s", error)
 
-def run_fastapi():
-    """Запуск FastAPI сервера"""
-    uvicorn.run(app, host=BOT_HOST, port=BOT_PORT)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to send Telegram keyboard",
+        )
 
-def main():
-    """Основная функция"""
-    global telegram_app
 
-    from datetime import datetime
+@app.post("/telegram/webhook", response_model=ApiResponse)
+async def telegram_webhook(request: Request):
+    """
+    Telegram webhook endpoint.
 
-    # Создаем приложение Telegram бота
-    telegram_app = Application.builder().token(TELEGRAM_TOKEN).build()
+    Используется только при BOT_MODE=webhook.
+    Секреты не проверяются, как договорились.
+    """
+    if BOT_MODE != "webhook":
+        raise HTTPException(
+            status_code=400,
+            detail="Webhook endpoint is disabled because BOT_MODE is not 'webhook'",
+        )
 
-    # Добавляем обработчики
-    telegram_app.add_handler(CommandHandler("start", start))
-    telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message_from_user))
-    telegram_app.add_handler(MessageHandler(filters.PHOTO, handle_photo_from_user))
-    telegram_app.add_handler(CallbackQueryHandler(button_click))
+    application = require_telegram_app()
 
-    # Добавляем обработчик ошибок
-    telegram_app.add_error_handler(error_handler)
+    try:
+        data = await request.json()
+        update = Update.de_json(data, application.bot)
 
-    # Запускаем FastAPI в отдельном потоке
-    import threading
-    threading.Thread(target=run_fastapi, daemon=True).start()
+        await application.process_update(update)
 
-    logger.info(f"Бот запущен. Веб-сервер: {WEB_SERVER_URL}")
+        return ApiResponse(ok=True)
 
-    # Запускаем бота
-    telegram_app.run_polling(allowed_updates=Update.ALL_TYPES)
+    except Exception as error:
+        logger.exception("Failed to process Telegram webhook update: %s", error)
 
-if __name__ == '__main__':
-    main()
-
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to process Telegram webhook update",
+        )

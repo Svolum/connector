@@ -1,54 +1,210 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Telegram Квиз</title>
-    <style>
-        body { font-family: Arial, sans-serif; }
-        #messages { border: 1px solid #ccc; padding: 10px; height: 400px; overflow-y: scroll; }
-        .message { margin-bottom: 10px; padding: 5px; background: #f0f0f0; }
-        #send-text-form, #send-image-form, #send-keyboard-form { margin-bottom: 20px; }
-        input, button { margin-bottom: 10px; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Telegram Web Stub</title>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+
+    h1 {
+      margin-bottom: 5px;
+    }
+
+    .hint {
+      color: #666;
+      margin-bottom: 20px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+
+    .panel {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 15px;
+    }
+
+    .panel h2 {
+      font-size: 18px;
+      margin-top: 0;
+    }
+
+    input,
+    textarea,
+    button {
+      box-sizing: border-box;
+      width: 100%;
+      margin-bottom: 10px;
+      padding: 8px;
+      font-size: 14px;
+    }
+
+    textarea {
+      min-height: 90px;
+      resize: vertical;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    #messages {
+      height: 650px;
+      overflow-y: auto;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 10px;
+    }
+
+    .message {
+      margin-bottom: 10px;
+      padding: 8px;
+      background: #f0f0f0;
+      border-radius: 6px;
+      word-break: break-word;
+    }
+
+    .operator_message,
+    .operator_keyboard {
+      background: #e8f2ff;
+    }
+
+    .keyboard_input {
+      background: #fff3cd;
+    }
+
+    .image-message {
+      background: #eef9ee;
+    }
+
+    .message-time {
+      margin-top: 5px;
+      font-size: 12px;
+      color: #777;
+    }
+
+    .message-image {
+      max-width: 260px;
+      max-height: 260px;
+      margin-top: 8px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+    }
+
+    #button_vals {
+      padding-left: 20px;
+    }
+
+    #button_vals li {
+      margin-bottom: 6px;
+    }
+
+    #button_vals button {
+      width: auto;
+      margin-left: 8px;
+      padding: 4px 8px;
+    }
+
+    .disabled-note {
+      color: #a33;
+      font-size: 13px;
+      margin-bottom: 10px;
+    }
+
+    .notification {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 15px 20px;
+      border-radius: 5px;
+      color: white;
+      font-weight: bold;
+      z-index: 1000;
+      max-width: 340px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      transition: opacity 0.3s ease;
+    }
+
+    .notification.success {
+      background: #4caf50;
+    }
+
+    .notification.error {
+      background: #f44336;
+    }
+
+    .notification.info {
+      background: #2196f3;
+    }
+  </style>
 </head>
+
 <body>
-    <h1>Квиз Telegram</h1>
-    <h6>Чат ID можно узнать, отправив любое сообщение боту, цифры в появившемся сообщении — это chat_id</h6>
+  <h1>Web-заглушка для Telegram bot API</h1>
 
-    <!-- Форма отправки текста -->
-    <div id="send-text-form">
-        <input type="text" id="chat_id" placeholder="Введите Telegram chat_id">
-        <textarea id="sending_text" placeholder="Введите текст сообщения"></textarea>
+  <div class="hint">
+    Чат ID можно узнать, отправив любое сообщение боту. В появившемся сообщении будет Telegram chat_id.
+  </div>
+
+  <div class="layout">
+    <div>
+      <div class="panel" id="send-text-form">
+        <h2>Отправить текст в Telegram</h2>
+
+        <input type="text" id="chat_id" placeholder="Telegram chat_id" />
+        <textarea id="sending_text" placeholder="Текст сообщения"></textarea>
+
         <button onclick="sendText()">Отправить текст</button>
-    </div>
+      </div>
 
-  
-    <!-- Форма отправки изображения -->
-    <div id="send-image-form">
-        <input type="text" id="image_chat_id" placeholder="Введите Telegram chat_id">
-        <input type="file" id="image_file" accept="image/jpeg,image/png">
-        <button onclick="sendImage()">Отправить изображение</button>
-    </div>
+      <div class="panel" id="send-keyboard-form">
+        <h2>Отправить inline-клавиатуру</h2>
 
+        <input id="keyboard_chat_id" type="text" placeholder="Telegram chat_id" />
+        <input id="keyboard_title" type="text" placeholder="Title для клавиатуры" />
 
-    <!-- Форма отправки inline клавиатуры -->
-    <div id="send-keyboard-form">
-        <input id="keyboard_title" type="text" placeholder="Введите title для клавиатуры">
-        <input id="keyboard_chat_id" type="text" placeholder="Введите Telegram chat_id">
         <button onclick="add_button()">Добавить кнопку</button>
+
         <ul id="button_vals"></ul>
+
         <button onclick="sendKeyboard()">Отправить клавиатуру</button>
+      </div>
+
+      <div class="panel" id="send-image-form">
+        <h2>Отправить изображение в Telegram<b>не работает</b></h2>
+
+        <input type="text" id="image_chat_id" placeholder="Telegram chat_id" disabled />
+        <input type="file" id="image_file" accept="image/jpeg,image/png,image/webp" disabled />
+
+        <button onclick="sendImage()">Отправить изображение</button>
+      </div>
     </div>
 
-  
-    <!-- Окно сообщений -->
-    <div id="messages"></div>
-    
-    
-    <script src="/socket.io/socket.io.js"></script>
-    <script src="scripts.js"></script>
-</body>
+    <div>
+      <div class="panel">
+        <h2>Сообщения от Telegram-пользователей</h2>
+        <div id="messages"></div>
+      </div>
+    </div>
+  </div>
 
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="scripts.js"></script>
+</body>
 </html>

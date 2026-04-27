@@ -2,7 +2,7 @@ services:
   web-server:
     build:
       context: .
-      dockerfile: ./web/Dockerfile.web
+      dockerfile: Dockerfile
     restart: no
     volumes:
       - ./web/index.html:/app/index.html
@@ -11,18 +11,20 @@ services:
       - ./web/scripts.js:/app/scripts.js
       - ./web/images:/app/images
     environment:
-      - TELEGRAM_BOT_URL=https://tgbot.xmilitary.online
-      - NODE_ENV=production
+      # - TELEGRAM_BOT_URL=https://tgbot.xmilitary.online
+      - TELEGRAM_BOT_URL=http://host.docker.internal:8000
+    ports:
+      - "3000:3000"
     labels:
-      - "traefik.enable=true"
+      - "traefik.enable=false"
       - "traefik.http.routers.web_interface.rule=Host(`web.xmilitary.online`)"
       - "traefik.http.routers.web_interface.service=web_interface"
       - "traefik.http.routers.web_interface.entrypoints=websecure"
       - "traefik.http.routers.web_interface.tls=true"
       - "traefik.http.services.web_interface.loadbalancer.server.port=3000"
     networks:
-      - proxy_traefik
+      - proxy
 
 networks:
-  proxy_traefik:
+  proxy:
     external: true

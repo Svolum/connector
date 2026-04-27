@@ -3,245 +3,265 @@ const socket = io();
 let buttons = [];
 
 function add_button() {
-    const buttonText = prompt('Введите текст для кнопки:');
-    if (buttonText) {
-        buttons.push(buttonText);
-        updateButtonList();
-    }
+  const buttonText = prompt('Введите текст для кнопки:');
+
+  if (buttonText && buttonText.trim()) {
+    buttons.push(buttonText.trim());
+    updateButtonList();
+  }
 }
 
 function updateButtonList() {
-    const buttonList = document.getElementById('button_vals');
-    buttonList.innerHTML = '';
+  const buttonList = document.getElementById('button_vals');
+  buttonList.innerHTML = '';
 
-    buttons.forEach((button, index) => {
-        const li = document.createElement('li');
-        li.textContent = button + ' ';
+  buttons.forEach((button, index) => {
+    const li = document.createElement('li');
+    li.textContent = button + ' ';
 
-        const removeBtn = document.createElement('button');
-        removeBtn.textContent = 'Удалить';
-        removeBtn.onclick = () => {
-            buttons.splice(index, 1);
-            updateButtonList();
-        };
+    const removeBtn = document.createElement('button');
+    removeBtn.textContent = 'Удалить';
+    removeBtn.onclick = () => {
+      buttons.splice(index, 1);
+      updateButtonList();
+    };
 
-        li.appendChild(removeBtn);
-        buttonList.appendChild(li);
-    });
+    li.appendChild(removeBtn);
+    buttonList.appendChild(li);
+  });
+}
+
+async function readJsonResponse(response) {
+  const text = await response.text();
+
+  if (!text) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { raw: text };
+  }
+}
+
+function getErrorMessage(result) {
+  return result.error || result.detail || result.message || 'Неизвестная ошибка';
 }
 
 async function sendText() {
-    const chat_id = document.getElementById('chat_id').value.trim();
-    const text = document.getElementById('sending_text').value.trim();
+  const chat_id = document.getElementById('chat_id').value.trim();
+  const text = document.getElementById('sending_text').value.trim();
 
-    if (!chat_id || !text) {
-        alert('Заполните chat_id и текст');
-        return;
+  if (!chat_id || !text) {
+    alert('Заполните chat_id и текст');
+    return;
+  }
+
+  try {
+    const response = await fetch('/message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: chat_id,
+        place: { chat_id },
+        text,
+      }),
+    });
+
+    const result = await readJsonResponse(response);
+
+    if (response.ok) {
+      addNewMessage({
+        chat_id,
+        sender_nick: 'Оператор',
+        text,
+        type: 'operator_message',
+      });
+
+      showNotification('Текст отправлен', 'success');
+      document.getElementById('sending_text').value = '';
+    } else {
+      showNotification('Ошибка отправки текста: ' + getErrorMessage(result), 'error');
     }
-
-    try {
-        const response = await fetch('/message', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                user_id: chat_id,
-                place: { chat_id },
-                text
-            })
-        });
-
-        const result = await response.json();
-
-        if (response.ok) {
-            addNewMessage(chat_id, 'Вы', text);
-            showNotification('Текст отправлен: ' + (result.message || 'Успешно'), 'success');
-            document.getElementById('sending_text').value = '';
-        } else {
-            showNotification('Ошибка отправки текста: ' + (result.error || 'Неизвестная ошибка'), 'error');
-        }
-    } catch (error) {
-        showNotification('Ошибка отправки текста: ' + error.message, 'error');
-        console.error('Ошибка отправки текста:', error);
-    }
+  } catch (error) {
+    showNotification('Ошибка отправки текста: ' + error.message, 'error');
+    console.error('Ошибка отправки текста:', error);
+  }
 }
 
 async function sendImage() {
-    const chat_id = document.getElementById('image_chat_id').value.trim();
-    const fileInput = document.getElementById('image_file');
-    const file = fileInput.files[0];
-
-    if (!chat_id || !file) {
-        alert('Заполните chat_id и выберите файл');
-        return;
-    }
-
-    try {
-        const base64 = await fileToBase64(file);
-
-        const response = await fetch('/send_image', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                user_id: chat_id,
-                place: { chat_id },
-                attachments_base64: [base64]
-            })
-        });
-
-        const result = await response.json();
-
-        if (response.ok) {
-            showNotification('Изображение отправлено: ' + (result.message || 'Успешно'), 'success');
-            fileInput.value = '';
-        } else {
-            showNotification('Ошибка отправки изображения: ' + (result.error || 'Неизвестная ошибка'), 'error');
-        }
-    } catch (error) {
-        showNotification('Ошибка отправки изображения: ' + error.message, 'error');
-        console.error('Ошибка отправки изображения:', error);
-    }
-}
-
-function fileToBase64(file) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-
-        reader.onload = () => {
-            const result = String(reader.result);
-            resolve(result.split(',')[1]);
-        };
-
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-    });
+  showNotification(
+    'Отправка изображения в Telegram не поддерживается текущим API бота',
+    'error'
+  );
 }
 
 async function sendKeyboard() {
-    const chat_id = document.getElementById('keyboard_chat_id').value.trim();
-    const title = document.getElementById('keyboard_title').value.trim();
+  const chat_id = document.getElementById('keyboard_chat_id').value.trim();
+  const title = document.getElementById('keyboard_title').value.trim();
 
-    if (!chat_id || !title || buttons.length < 2) {
-        alert('Заполните chat_id, title и добавьте хотя бы 2 кнопки');
-        return;
+  if (!chat_id || !title || buttons.length === 0) {
+    alert('Заполните chat_id, title и добавьте хотя бы одну кнопку');
+    return;
+  }
+
+  try {
+    const response = await fetch('/keyboard/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: chat_id,
+        place: { chat_id },
+        title,
+        buttons: buttons.map((text) => ({ text })),
+      }),
+    });
+
+    const result = await readJsonResponse(response);
+
+    if (response.ok) {
+      addNewMessage({
+        chat_id,
+        sender_nick: 'Оператор',
+        text: `${title}: ${buttons.join(', ')}`,
+        type: 'operator_keyboard',
+      });
+
+      showNotification('Клавиатура отправлена', 'success');
+
+      document.getElementById('keyboard_title').value = '';
+      document.getElementById('keyboard_chat_id').value = '';
+      buttons = [];
+      updateButtonList();
+    } else {
+      showNotification('Ошибка отправки клавиатуры: ' + getErrorMessage(result), 'error');
     }
-
-    try {
-        const response = await fetch('/keyboard/create', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                user_id: chat_id,
-                place: { chat_id },
-                title,
-                buttons: buttons.map(text => ({ text }))
-            })
-        });
-
-        const result = await response.json();
-
-        if (response.ok) {
-            addNewMessage(chat_id, 'Оператор', `${title}: ${buttons.join(', ')}`);
-            showNotification('Клавиатура отправлена: ' + (result.message || 'Успешно'), 'success');
-
-            document.getElementById('keyboard_title').value = '';
-            document.getElementById('keyboard_chat_id').value = '';
-            buttons = [];
-            updateButtonList();
-        } else {
-            showNotification('Ошибка отправки клавиатуры: ' + (result.error || 'Неизвестная ошибка'), 'error');
-        }
-    } catch (error) {
-        showNotification('Ошибка отправки клавиатуры: ' + error.message, 'error');
-        console.error('Ошибка отправки клавиатуры:', error);
-    }
+  } catch (error) {
+    showNotification('Ошибка отправки клавиатуры: ' + error.message, 'error');
+    console.error('Ошибка отправки клавиатуры:', error);
+  }
 }
 
 function showNotification(message, type = 'info') {
-    const notification = document.createElement('div');
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        padding: 15px 20px;
-        border-radius: 5px;
-        color: white;
-        font-weight: bold;
-        z-index: 1000;
-        max-width: 300px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        transition: opacity 0.3s ease;
-    `;
+  const notification = document.createElement('div');
 
-    if (type === 'success') {
-        notification.style.backgroundColor = '#4CAF50';
-    } else if (type === 'error') {
-        notification.style.backgroundColor = '#f44336';
-    } else {
-        notification.style.backgroundColor = '#2196F3';
-    }
+  notification.className = `notification ${type}`;
+  notification.textContent = message;
 
-    notification.textContent = message;
-    document.body.appendChild(notification);
+  document.body.appendChild(notification);
+
+  setTimeout(() => {
+    notification.style.opacity = '0';
 
     setTimeout(() => {
-        notification.style.opacity = '0';
-        setTimeout(() => {
-            if (notification.parentNode) {
-                notification.parentNode.removeChild(notification);
-            }
-        }, 300);
-    }, 5000);
+      if (notification.parentNode) {
+        notification.parentNode.removeChild(notification);
+      }
+    }, 300);
+  }, 4000);
 }
 
-function addNewMessage(chat_id, sender_nick, text) {
-    const messagesDiv = document.getElementById('messages');
-    const messageDiv = document.createElement('div');
-    messageDiv.className = 'message';
+function addNewMessage({ chat_id, sender_nick, text, type = 'message', date_time = null }) {
+  const messagesDiv = document.getElementById('messages');
 
-    const strong = document.createElement('strong');
-    strong.textContent = `${sender_nick} (${chat_id}):`;
+  const messageDiv = document.createElement('div');
+  messageDiv.className = `message ${type}`;
 
-    const span = document.createElement('span');
-    span.textContent = ` ${text}`;
+  const strong = document.createElement('strong');
+  strong.textContent = `${sender_nick} (${chat_id ?? 'null'}):`;
 
-    messageDiv.appendChild(strong);
-    messageDiv.appendChild(span);
+  const span = document.createElement('span');
+  span.textContent = ` ${text}`;
 
-    messagesDiv.appendChild(messageDiv);
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  messageDiv.appendChild(strong);
+  messageDiv.appendChild(span);
+
+  if (date_time) {
+    const time = document.createElement('div');
+    time.className = 'message-time';
+    time.textContent = date_time;
+    messageDiv.appendChild(time);
+  }
+
+  messagesDiv.appendChild(messageDiv);
+  messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
-socket.on('newMessage', (user_id, place, text) => {
-    // console.log(chat_id);
-    addNewMessage(user_id, 'Пользователь', text);
+function addNewImage({ chat_id, image_url, date_time = null }) {
+  const messagesDiv = document.getElementById('messages');
+
+  const messageDiv = document.createElement('div');
+  messageDiv.className = 'message image-message';
+
+  const strong = document.createElement('strong');
+  strong.textContent = `Пользователь (${chat_id ?? 'null'}):`;
+
+  const br = document.createElement('br');
+
+  const img = document.createElement('img');
+  img.src = image_url;
+  img.alt = 'Изображение';
+  img.className = 'message-image';
+
+  const link = document.createElement('a');
+  link.href = image_url;
+  link.target = '_blank';
+  link.textContent = 'Открыть изображение';
+
+  messageDiv.appendChild(strong);
+  messageDiv.appendChild(br);
+  messageDiv.appendChild(img);
+  messageDiv.appendChild(document.createElement('br'));
+  messageDiv.appendChild(link);
+
+  if (date_time) {
+    const time = document.createElement('div');
+    time.className = 'message-time';
+    time.textContent = date_time;
+    messageDiv.appendChild(time);
+  }
+
+  messagesDiv.appendChild(messageDiv);
+  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
+
+socket.on('newMessage', (payload) => {
+  const user_id = payload.user_id;
+  const chat_id = payload.place?.chat_id || user_id;
+  const text = payload.text;
+  const type = payload.type || 'message';
+  const date_time = payload.date_time;
+
+  const sender =
+    type === 'keyboard_input'
+      ? 'Пользователь нажал кнопку'
+      : 'Пользователь';
+
+  addNewMessage({
+    chat_id,
+    sender_nick: sender,
+    text,
+    type,
+    date_time,
+  });
 });
 
-socket.on('newImage', (chat_id, image_url, date_time) => {
-    const messagesDiv = document.getElementById('messages');
-    const messageDiv = document.createElement('div');
-    messageDiv.className = 'message';
+socket.on('newImage', (payload) => {
+  const user_id = payload.user_id;
+  const chat_id = payload.place?.chat_id || user_id;
 
-    const strong = document.createElement('strong');
-    strong.textContent = `Пользователь (${chat_id}):`;
-
-    const br = document.createElement('br');
-    const img = document.createElement('img');
-    img.src = image_url;
-    img.alt = 'Изображение';
-    img.style.maxWidth = '200px';
-
-    messageDiv.appendChild(strong);
-    messageDiv.appendChild(br);
-    messageDiv.appendChild(img);
-
-    messagesDiv.appendChild(messageDiv);
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  addNewImage({
+    chat_id,
+    image_url: payload.image_url,
+    date_time: payload.date_time,
+  });
 });
 
 socket.on('connect', () => {
-    showNotification('Подключено к серверу', 'success');
+  showNotification('Подключено к серверу', 'success');
 });
 
 socket.on('disconnect', () => {
-    showNotification('Отключено от сервера', 'error');
+  showNotification('Отключено от сервера', 'error');
 });

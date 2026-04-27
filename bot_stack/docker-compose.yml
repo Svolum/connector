@@ -1,27 +1,30 @@
-  services:
-    telegram-bot:
-      build:
-        context: .
-        dockerfile: ./bot/Dockerfile.bot
-      restart: no
-      volumes:
-        - ./bot/bot.py:/app/bot.py
-        - ./bot/images:/app/images
-      environment:
-        - WEB_SERVER_URL=https://web.xmilitary.online
-        - API_TOKEN=1873920038:AAGbA5l5Uv0qqLRxYrcs1iShTaZ0MBH7eM4
-        - BOT_HOST=0.0.0.0
-        - BOT_PORT=8080
-      labels:
-        - "traefik.enable=true"
-        - "traefik.http.routers.tg_bot.rule=Host(`tgbot.xmilitary.online`)"
-        - "traefik.http.routers.tg_bot.service=tg_bot"
-        - "traefik.http.routers.tg_bot.entrypoints=websecure"
-        - "traefik.http.routers.tg_bot.tls=true"
-        - "traefik.http.services.tg_bot.loadbalancer.server.port=8080"
-      networks:
-        - proxy_traefik
+services:
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: no
+    volumes:
+      - ./bot/bot.py:/app/bot.py
+      - ./bot/images:/app/images
+    environment:
+      - BOT_MODE=polling
+      - BOT_TOKEN=1873920038:AAGbA5l5Uv0qqLRxYrcs1iShTaZ0MBH7eM4
+      - WEBHOOK_URL=https://tgbot.xmilitary.online/telegram/webhook
+      # - WEB_API_URL=https://web.xmilitary.online
+      - WEB_API_URL=http://host.docker.internal:3000
+    ports:
+      - "8001:8000"
+    labels:
+      - "traefik.enable=false"
+      - "traefik.http.routers.tg_bot.rule=Host(`tgbot.xmilitary.online`)"
+      - "traefik.http.routers.tg_bot.service=tg_bot"
+      - "traefik.http.routers.tg_bot.entrypoints=websecure"
+      - "traefik.http.routers.tg_bot.tls=true"
+      - "traefik.http.services.tg_bot.loadbalancer.server.port=8000"
+    networks:
+      - proxy
 
-  networks:
-    proxy_traefik:
-      external: true
+networks:
+  proxy:
+    external: true
