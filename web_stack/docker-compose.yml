@@ -11,8 +11,7 @@ services:
       - ./web/scripts.js:/app/scripts.js
       - ./web/images:/app/images
     environment:
-      # - TELEGRAM_BOT_URL=https://tgbot.xmilitary.online
-      - TELEGRAM_BOT_URL=http://host.docker.internal:8000
+      - TELEGRAM_BOT_URL=http://host.docker.internal:8001
     ports:
       - "3000:3000"
     labels:

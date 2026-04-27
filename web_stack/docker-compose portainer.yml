@@ -1,0 +1,19 @@
+services:
+  web-server:
+    image: lilkokonat/tg_connector-web-server:v2
+    restart: unless-stopped
+    environment:
+      - TELEGRAM_BOT_URL=https://tgbot.xmilitary.ru
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.web_interface.rule=Host(`web.xmilitary.ru`)"
+      - "traefik.http.routers.web_interface.service=web_interface"
+      - "traefik.http.routers.web_interface.entrypoints=websecure"
+      - "traefik.http.routers.web_interface.tls=true"
+      - "traefik.http.services.web_interface.loadbalancer.server.port=3000"
+    networks:
+      - proxy_traefik
+
+networks:
+  proxy_traefik:
+    external: true

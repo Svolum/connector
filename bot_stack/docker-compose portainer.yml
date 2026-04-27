@@ -1,0 +1,22 @@
+services:
+  telegram-bot:
+    image: lilkokonat/tg_connector-telegram-bot:v2
+    restart: unless-stopped
+    environment:
+      - BOT_MODE=webhook # polling || webhook
+      - BOT_TOKEN=1873920038:AAGbA5l5Uv0qqLRxYrcs1iShTaZ0MBH7eM4
+      - WEBHOOK_URL=https://tgbot.xmilitary.ru/telegram/webhook
+      - WEB_API_URL=https://web.xmilitary.ru
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.tg_bot.rule=Host(`tgbot.xmilitary.ru`)"
+      - "traefik.http.routers.tg_bot.service=tg_bot"
+      - "traefik.http.routers.tg_bot.entrypoints=websecure"
+      - "traefik.http.routers.tg_bot.tls=true"
+      - "traefik.http.services.tg_bot.loadbalancer.server.port=8001"
+    networks:
+      - proxy_traefik
+
+networks:
+  proxy_traefik:
+    external: true
