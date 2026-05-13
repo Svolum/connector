@@ -1,5 +1,4 @@
-fastapi
 uvicorn[standard]
-httpx
-python-telegram-bot
-pydantic
+fastapi 
+python-telegram-bot[socks]
+httpx[socks]

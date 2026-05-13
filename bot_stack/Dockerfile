@@ -1,12 +1,15 @@
 FROM python:3.10-slim
 
+# Рабочая директория (лучше не в корень /)
 WORKDIR /app
 
-COPY ./bot/requirements.txt ./
+# Сначала копируются только зависимости (для слоев контейнера)
+COPY bot/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY ./bot/bot.py ./
+# Всё остальное
+COPY bot/main.py bot/tg_api.py bot/tg_handlers.py bot/load_env.py .
 
 EXPOSE 8000
 
-CMD ["uvicorn", "bot:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["python", "main.py"]
