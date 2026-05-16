@@ -217,8 +217,7 @@ app.post('/image', (req, res) => {
     }
 
     return res.status(200).json({
-      status: 'success',
-      image_urls: savedImages,
+      attachment_urls: savedImages,
     });
   } catch (err) {
     console.error('Ошибка сохранения изображения:', err);
@@ -304,7 +303,57 @@ app.post('/message', async (req, res) => {
     });
   }
 });
+app.post('/keyboard/update', async (req, res) => {
+  const { user_id, place, title, buttons } = req.body;
 
+  console.log('POST /keyboard/update BODY:', req.body);
+
+  if (!user_id || !title || !Array.isArray(buttons) || buttons.length === 0) {
+    return res.status(400).json({
+      error: 'Некорректные данные: нужны user_id, title и buttons',
+    });
+  }
+
+  const normalizedButtons = buttons
+    .map((button) => typeof button === 'string' ? { text: button } : button)
+    .filter((button) => button && typeof button.text === 'string' && button.text.trim());
+
+  if (normalizedButtons.length === 0) {
+    return res.status(400).json({
+      error: 'Некорректные данные: buttons должны содержать text',
+    });
+  }
+
+  try {
+    const response = await fetchWithTimeout(`${TELEGRAM_BOT_URL}/keyboard/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id,
+        place,
+        title,
+        buttons: normalizedButtons,
+      }),
+    });
+
+    console.log('keyboard/update response status from bot:', response.status);
+
+    return res.status(response.status).end();
+  } catch (error) {
+    console.error('Ошибка при обновлении клавиатуры в Telegram bot:', error);
+
+    if (error.name === 'AbortError') {
+      return res.status(504).json({
+        error: 'Таймаут при обращении к Telegram bot service',
+      });
+    }
+
+    return res.status(500).json({
+      error: 'Не удалось обновить клавиатуру',
+      details: error.message,
+    });
+  }
+});
 app.post('/keyboard/create', async (req, res) => {
   const { user_id, place, title, buttons } = req.body;
   const validation = validateCommonPayload(user_id, place);
@@ -349,6 +398,9 @@ app.post('/keyboard/create', async (req, res) => {
 
     const data = await readResponseBody(response);
 
+
+    console.log('keyboard/create response from bot:', data); // ← добавить
+
     return res.status(response.status).json(data);
   } catch (error) {
     console.error('Ошибка при отправке клавиатуры в Telegram bot:', error);
@@ -366,20 +418,26 @@ app.post('/keyboard/create', async (req, res) => {
   }
 });
 
-// Этот endpoint оставлен специально, чтобы интерфейс явно говорил,
-// что отправка изображений из web в Telegram невозможна с текущим API бота.
-app.post('/send_image', (req, res) => {
-  console.log('POST /send_image BODY:', req.body);
+app.post('/command', (req, res) => {
+  const { user_id, place, name, date_time } = req.body;
+  const validation = validateCommonPayload(user_id, place);
 
-  return res.status(501).json({
-    error: 'Отправка изображения из web в Telegram не поддерживается текущим API бота',
-    details: 'В готовом боте есть /message и /keyboard/create, но нет endpoint для отправки изображения в Telegram.',
+  if (!validation.ok || !name) {
+    return res.status(400).json({
+      error: 'Нужны user_id, place.chat_id и name',
+    });
+  }
+
+  emitMessage({
+    user_id,
+    place,
+    text: name,
+    type: 'command',
+    date_time,
   });
-});
 
-// =========================
-// Pages / health
-// =========================
+  return res.status(200).json({ status: 'success' });
+});
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));

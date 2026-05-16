@@ -121,17 +121,27 @@ async function sendKeyboard() {
     const result = await readJsonResponse(response);
 
     if (response.ok) {
+      const message_id = result?.place?.message_id;
+
       addNewMessage({
         chat_id,
         sender_nick: 'Оператор',
         text: `${title}: ${buttons.join(', ')}`,
         type: 'operator_keyboard',
+        message_id,
       });
 
       showNotification('Клавиатура отправлена', 'success');
 
       document.getElementById('keyboard_title').value = '';
       document.getElementById('keyboard_chat_id').value = '';
+
+      // Заполняем поля update формы
+      if (message_id) {
+        document.getElementById('update_chat_id').value = chat_id;
+        document.getElementById('update_message_id').value = message_id;
+      }
+
       buttons = [];
       updateButtonList();
     } else {
@@ -162,7 +172,8 @@ function showNotification(message, type = 'info') {
   }, 4000);
 }
 
-function addNewMessage({ chat_id, sender_nick, text, type = 'message', date_time = null }) {
+function addNewMessage({ chat_id, sender_nick, text, type = 'message', date_time = null, message_id = null }) {
+
   const messagesDiv = document.getElementById('messages');
 
   const messageDiv = document.createElement('div');
@@ -176,6 +187,12 @@ function addNewMessage({ chat_id, sender_nick, text, type = 'message', date_time
 
   messageDiv.appendChild(strong);
   messageDiv.appendChild(span);
+  if (message_id) {
+    const mid = document.createElement('div');
+    mid.className = 'message-meta';
+    mid.textContent = `message_id: ${message_id}`;
+    messageDiv.appendChild(mid);
+  }
 
   if (date_time) {
     const time = document.createElement('div');
@@ -226,6 +243,83 @@ function addNewImage({ chat_id, image_url, date_time = null }) {
   messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
+async function sendKeyboardUpdate() {
+  const chat_id = document.getElementById('update_chat_id').value.trim();
+  const message_id = document.getElementById('update_message_id').value.trim();
+  const title = document.getElementById('update_keyboard_title').value.trim();
+
+  if (!chat_id || !message_id || !title || buttons_update.length === 0) {
+    alert('Заполните все поля и добавьте хотя бы одну кнопку');
+    return;
+  }
+
+  try {
+    const response = await fetch('/keyboard/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: chat_id,
+        place: {
+          place: { chat_id, message_id },
+        },
+        title,
+        buttons: buttons_update.map((text) => ({ text })),
+      }),
+    });
+
+    if (response.ok) {
+      addNewMessage({
+        chat_id,
+        sender_nick: 'Оператор',
+        text: `[обновление] ${title}: ${buttons_update.join(', ')}`,
+        type: 'operator_keyboard',
+      });
+
+      showNotification('Клавиатура обновлена', 'success');
+
+      document.getElementById('update_keyboard_title').value = '';
+      buttons_update = [];
+      updateButtonUpdateList();
+    } else {
+      const result = await readJsonResponse(response);
+      console.log('keyboard/create result in browser:', result);
+      showNotification('Ошибка обновления~: ' + getErrorMessage(result), 'error');
+    }
+  } catch (error) {
+    showNotification('Ошибка обновления: ' + error.message, 'error');
+  }
+}
+
+let buttons_update = [];
+
+function add_button_update() {
+  const buttonText = prompt('Введите текст для кнопки:');
+  if (buttonText && buttonText.trim()) {
+    buttons_update.push(buttonText.trim());
+    updateButtonUpdateList();
+  }
+}
+
+function updateButtonUpdateList() {
+  const buttonList = document.getElementById('button_update_vals');
+  buttonList.innerHTML = '';
+
+  buttons_update.forEach((button, index) => {
+    const li = document.createElement('li');
+    li.textContent = button + ' ';
+
+    const removeBtn = document.createElement('button');
+    removeBtn.textContent = 'Удалить';
+    removeBtn.onclick = () => {
+      buttons_update.splice(index, 1);
+      updateButtonUpdateList();
+    };
+
+    li.appendChild(removeBtn);
+    buttonList.appendChild(li);
+  });
+}
+
 socket.on('newMessage', (payload) => {
   const user_id = payload.user_id;
   const chat_id = payload.place?.chat_id || user_id;
@@ -234,9 +328,11 @@ socket.on('newMessage', (payload) => {
   const date_time = payload.date_time;
 
   const sender =
-    type === 'keyboard_input'
-      ? 'Пользователь нажал кнопку'
-      : 'Пользователь';
+    type === 'keyboard_input' ? 'Пользователь нажал кнопку' :
+    type === 'command'        ? 'Команда' :
+    type === 'action'         ? 'Действие над сообщением' :
+    'Пользователь';
+
 
   addNewMessage({
     chat_id,
