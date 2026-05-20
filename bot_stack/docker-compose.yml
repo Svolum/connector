@@ -5,7 +5,6 @@ services:
     environment:
       - SELF_URL=https://tgbot.xmilitary.ru
       - WEB_URL=https://web.xmilitary.ru # https://study.dev.fardrive.ru
-      - PORT=8000
       - TOKEN=1873920038:AAGbA5l5Uv0qqLRxYrcs1iShTaZ0MBH7eM4
       - WEBHOO_PATH=telegram
       - PROXY_URL=socks5://cooG4Qv62N8Us704oNIev1Cwg162AV:j9uOlN4VBnOFJfwWyIy8jtMFbG6RFb@77.110.125.150:1080
